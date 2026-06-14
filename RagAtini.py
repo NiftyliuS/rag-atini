@@ -68,27 +68,6 @@ class RagAtini:
 
         return torch.cat(all_outputs, dim=0)
 
-    def mesh_chunks(self, chunk_vectors, tokens_len: int, stride: int):
-        if chunk_vectors.size(0) == 0:
-            hidden_dim = chunk_vectors.size(-1) if chunk_vectors.dim() == 3 else 768
-            return torch.empty((0, hidden_dim), device=self.device)
-
-        window_size = chunk_vectors.size(1)
-        hidden_dim = chunk_vectors.size(2)
-        sum_vectors = torch.zeros((tokens_len, hidden_dim), device=self.device, dtype=chunk_vectors.dtype)
-        count_vectors = torch.zeros((tokens_len, 1), device=self.device, dtype=chunk_vectors.dtype)
-
-        for chunk_idx in range(chunk_vectors.size(0)):
-            start_idx = chunk_idx * stride
-            end_idx = min(start_idx + window_size, tokens_len)
-            chunk_len = end_idx - start_idx
-
-            sum_vectors[start_idx:end_idx] += chunk_vectors[chunk_idx, :chunk_len, :]
-            count_vectors[start_idx:end_idx] += 1
-
-        count_vectors[count_vectors == 0] = 1
-        return sum_vectors / count_vectors
-
     def apply_gaussian(self, vectors, sigma: int):
         tokens_len = vectors.size(0)
         if tokens_len == 0:
@@ -157,7 +136,7 @@ class RagAtini:
         if tokens_len == 0:
             return torch.empty(0, device=self.device)
 
-        sigma = sigma if sigma else max(10, tokens_len // 100)
+        sigma = sigma if sigma else max(10, self.max_context_window // 100)
 
         chunks = self.chunk_tokens(tokens, stride)
         chunk_vectors = self.process_chunks(chunks, internal_batch)
