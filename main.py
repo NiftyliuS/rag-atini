@@ -5,12 +5,13 @@ from transformers import AutoTokenizer, AutoModel
 
 from RagAtini import RagAtini
 
-DEVICE='cuda'
+DEVICE = 'cuda'
 
 model_name = "BAAI/bge-m3"
 tokenizer = AutoTokenizer.from_pretrained(model_name)
-model = AutoModel.from_pretrained(model_name).to("cuda")
+model = AutoModel.from_pretrained(model_name).to(DEVICE)
 ragAtini = RagAtini(model, tokenizer)
+
 def ensemble_segmentation(document_str: str):
     velocities = ragAtini.vectorize(document_str)
 

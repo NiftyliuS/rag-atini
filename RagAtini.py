@@ -148,6 +148,7 @@ class RagAtini:
         stride = stride if stride else self.default_stride
 
         tokens = self.tokenize(text).squeeze(0)
+        tokens = tokens[:16382]
         tokens_len = tokens.size(0)
 
         if tokens_len == 0:
