@@ -89,10 +89,15 @@ class RagAtini:
 
     def process_chunk_velocities(self, chunk_vectors, tokens_len: int, stride: int, sigma: int):
         if chunk_vectors.size(0) == 0:
-            return torch.empty((0, 0), device=self.device, dtype=torch.float32)
+            return torch.empty((0, 0), device=self.device, dtype=torch.float32), torch.empty((0, 0), device=self.device,
+                                                                                             dtype=torch.float32)
 
         window_size = chunk_vectors.size(1) - 2
         chunk_velocities = torch.zeros((chunk_vectors.size(0), window_size), device=self.device, dtype=torch.float32)
+        chunk_masks = torch.zeros((chunk_vectors.size(0), window_size), device=self.device, dtype=torch.float32)
+
+        base_window = 0.5 * (
+                    1.0 - torch.cos(2.0 * torch.pi * torch.arange(window_size, device=self.device) / (window_size - 1)))
 
         for chunk_idx in range(chunk_vectors.size(0)):
             start_idx = chunk_idx * stride
@@ -103,34 +108,49 @@ class RagAtini:
             smoothed = self.apply_gaussian(valid_vectors, sigma)
             velocity = self.calculate_velocity(smoothed)
 
+            chunk_mask = base_window[:chunk_len].clone()
+
+            if chunk_idx == 0:
+                chunk_mask[:chunk_len // 2] = 1.0
+            if chunk_idx == chunk_vectors.size(0) - 1:
+                chunk_mask[chunk_len // 2:] = 1.0
+                taper_len = min(256, chunk_len)
+                if taper_len > 1:
+                    taper = 0.5 * (1.0 + torch.cos(
+                        torch.pi * torch.arange(taper_len, device=self.device) / (taper_len - 1)))
+                    chunk_mask[-taper_len:] = taper
+                elif taper_len == 1:
+                    chunk_mask[-1] = 0.0
+
             chunk_velocities[chunk_idx, :chunk_len] = velocity
+            chunk_masks[chunk_idx, :chunk_len] = chunk_mask
 
-        return chunk_velocities
+        return chunk_velocities, chunk_masks
 
-    def mesh_velocities(self, chunk_velocities, tokens_len: int, stride: int):
+    def mesh_velocities(self, chunk_velocities, chunk_masks, tokens_len: int, stride: int):
         if chunk_velocities.size(0) == 0:
             return torch.empty(0, device=self.device)
 
         window_size = chunk_velocities.size(1)
         sum_vel = torch.zeros(tokens_len, device=self.device, dtype=chunk_velocities.dtype)
-        count_vel = torch.zeros(tokens_len, device=self.device, dtype=chunk_velocities.dtype)
+        weight_vel = torch.zeros(tokens_len, device=self.device, dtype=chunk_velocities.dtype)
 
         for chunk_idx in range(chunk_velocities.size(0)):
             start_idx = chunk_idx * stride
             end_idx = min(start_idx + window_size, tokens_len)
             chunk_len = end_idx - start_idx
 
-            sum_vel[start_idx:end_idx] += chunk_velocities[chunk_idx, :chunk_len]
-            count_vel[start_idx:end_idx] += 1
+            sum_vel[start_idx:end_idx] += chunk_velocities[chunk_idx, :chunk_len] * chunk_masks[chunk_idx, :chunk_len]
+            weight_vel[start_idx:end_idx] += chunk_masks[chunk_idx, :chunk_len]
 
-        count_vel[count_vel == 0] = 1
-        return sum_vel / count_vel
+        weight_vel[weight_vel == 0] = 1.0
+        return sum_vel / weight_vel
 
     def vectorize(self, text: str, internal_batch: int = 1, stride: int = None, sigma: int = None):
         stride = stride if stride else self.default_stride
 
         tokens = self.tokenize(text).squeeze(0)
-        tokens = tokens[:16382]
+        tokens = tokens[:12382]
         tokens_len = tokens.size(0)
 
         if tokens_len == 0:
@@ -141,7 +161,7 @@ class RagAtini:
         chunks = self.chunk_tokens(tokens, stride)
         chunk_vectors = self.process_chunks(chunks, internal_batch)
 
-        chunk_velocities = self.process_chunk_velocities(chunk_vectors, tokens_len, stride, sigma)
-        semantic_velocity = self.mesh_velocities(chunk_velocities, tokens_len, stride)
+        chunk_velocities, chunk_masks = self.process_chunk_velocities(chunk_vectors, tokens_len, stride, sigma)
+        semantic_velocity = self.mesh_velocities(chunk_velocities, chunk_masks, tokens_len, stride)
 
         return semantic_velocity
