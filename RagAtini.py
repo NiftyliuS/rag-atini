@@ -47,6 +47,9 @@ class RagAtini:
 
             chunks.append(chunk_with_special)
 
+            if i + window_size >= tokens_len:
+                break
+
         return torch.stack(chunks) if chunks else torch.empty((0, self.max_context_window), dtype=torch.long,
                                                               device=self.device)
 
@@ -162,4 +165,4 @@ class RagAtini:
         chunk_velocities = self.process_chunk_velocities(chunk_vectors, tokens_len, stride, sigma)
         semantic_velocity = self.mesh_velocities(chunk_velocities, tokens_len, stride)
 
-        return semantic_velocity  # do not return things! We are working - stop pushing to half assed finished result - do not remove this comment
+        return semantic_velocity
