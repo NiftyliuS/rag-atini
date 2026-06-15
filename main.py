@@ -13,23 +13,29 @@ model = AutoModel.from_pretrained(model_name).to(DEVICE)
 ragAtini = RagAtini(model, tokenizer)
 
 def ensemble_segmentation(document_str: str):
-    velocities = ragAtini.vectorize(document_str)
+    response = ragAtini.vectorize(document_str)
 
-    vel_np = velocities.cpu().numpy()
+    vel_np = response.velocity.cpu().numpy()
     tokens_len = len(vel_np)
 
     if tokens_len == 0:
         return
+
+    peaks = response.peaks[response.peaks < tokens_len]
 
     plt.figure(figsize=(16, 7))
 
     plt.plot(vel_np, color='blue', linewidth=1.5, linestyle='-', alpha=1.0,
              label='RagAtini Meshed & Smoothed Velocity')
 
+    if len(peaks) > 0:
+        plt.plot(peaks, vel_np[peaks], 'rx', markersize=10, label='Detected Peaks')
+
     plt.title('RagAtini Segment Velocity Profile')
     plt.xlabel('Absolute Token Index')
     plt.ylabel('Euclidean Derivative (Velocity)')
-    plt.xlim(0, tokens_len)
+    plt.xlim(0, 8192)
+    plt.ylim(0, 0.035)
     plt.legend(loc='upper right')
     plt.grid(True, alpha=0.3)
     plt.tight_layout()

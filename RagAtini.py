@@ -2,6 +2,18 @@ import torch
 import numpy as np
 import copy
 from scipy.ndimage import gaussian_filter1d
+from scipy.signal import find_peaks
+
+
+class RagAtiniResponse:
+    def __init__(self,
+                 velocity: torch.Tensor,
+                 peaks: np.ndarray,
+                 tokens: torch.Tensor,
+                 ):
+        self.velocity = velocity
+        self.peaks = peaks
+        self.tokens = tokens
 
 
 class RagAtini:
@@ -17,6 +29,7 @@ class RagAtini:
         self.pad_id = self.tokenizer.pad_token_id if self.tokenizer.pad_token_id is not None else 0
 
         self.default_stride = int(self.max_context_window * 0.25)
+        self.sigma = max(10, self.max_context_window // 100)
 
         if hasattr(self.model, "eval"):
             self.model.eval()
@@ -97,7 +110,7 @@ class RagAtini:
         chunk_masks = torch.zeros((chunk_vectors.size(0), window_size), device=self.device, dtype=torch.float32)
 
         base_window = 0.5 * (
-                    1.0 - torch.cos(2.0 * torch.pi * torch.arange(window_size, device=self.device) / (window_size - 1)))
+                1.0 - torch.cos(2.0 * torch.pi * torch.arange(window_size, device=self.device) / (window_size - 1)))
 
         for chunk_idx in range(chunk_vectors.size(0)):
             start_idx = chunk_idx * stride
@@ -146,16 +159,31 @@ class RagAtini:
         weight_vel[weight_vel == 0] = 1.0
         return sum_vel / weight_vel
 
-    def vectorize(self, text: str, internal_batch: int = 1, stride: int = None, sigma: int = None):
+    def detect_peaks(self, semantic_velocity, distance: int, prominence: float = 4.0):
+        if isinstance(semantic_velocity, torch.Tensor):
+            vel_np = semantic_velocity.cpu().numpy()
+        else:
+            vel_np = semantic_velocity
+
+        valid_velocity = vel_np[distance:]
+        if len(valid_velocity) == 0:
+            return np.array([])
+
+        median_vel = np.median(valid_velocity)
+        mad = np.median(np.abs(valid_velocity - median_vel))
+        min_prominence = mad * prominence
+
+        peaks, _ = find_peaks(vel_np, distance=distance, prominence=min_prominence)
+
+        return peaks
+
+    def vectorize(self, text: str, internal_batch: int = 1, stride: int = None, sigma: int = None,
+                  prominence: float = 4.0):
         stride = stride if stride else self.default_stride
+        sigma = sigma if sigma else self.sigma
 
         tokens = self.tokenize(text).squeeze(0)
         tokens_len = tokens.size(0)
-
-        if tokens_len == 0:
-            return torch.empty(0, device=self.device)
-
-        sigma = sigma if sigma else max(10, self.max_context_window // 100)
 
         chunks = self.chunk_tokens(tokens, stride)
         chunk_vectors = self.process_chunks(chunks, internal_batch)
@@ -163,4 +191,9 @@ class RagAtini:
         chunk_velocities, chunk_masks = self.process_chunk_velocities(chunk_vectors, tokens_len, stride, sigma)
         semantic_velocity = self.mesh_velocities(chunk_velocities, chunk_masks, tokens_len, stride)
 
-        return semantic_velocity
+        semantic_peaks = self.detect_peaks(semantic_velocity, sigma, prominence)
+        return RagAtiniResponse(
+            velocity=semantic_velocity,
+            peaks=semantic_peaks,
+            tokens=tokens
+        )
