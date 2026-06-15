@@ -9,13 +9,13 @@ class RagAtiniResponse:
     def __init__(self,
                  velocity: torch.Tensor,
                  peaks: np.ndarray,
-                 tokens: torch.Tensor,
-                 vectors: torch.Tensor,
+                 token_ids: torch.Tensor,
+                 token_vectors: torch.Tensor,
                  ):
         self.velocity = velocity
         self.peaks = peaks
-        self.tokens = tokens
-        self.vectors = vectors
+        self.token_ids = token_ids
+        self.token_vectors = token_vectors
 
 
 class RagAtini:
@@ -204,6 +204,6 @@ class RagAtini:
         return RagAtiniResponse(
             velocity=semantic_velocity,
             peaks=semantic_peaks,
-            tokens=tokens,
-            vectors=meshed_vectors
+            token_ids=tokens,
+            token_vectors=meshed_vectors
         )
