@@ -10,10 +10,12 @@ class RagAtiniResponse:
                  velocity: torch.Tensor,
                  peaks: np.ndarray,
                  tokens: torch.Tensor,
+                 vectors: torch.Tensor,
                  ):
         self.velocity = velocity
         self.peaks = peaks
         self.tokens = tokens
+        self.vectors = vectors
 
 
 class RagAtini:
@@ -159,6 +161,31 @@ class RagAtini:
         weight_vel[weight_vel == 0] = 1.0
         return sum_vel / weight_vel
 
+    def mesh_vectors(self, chunk_vectors, chunk_masks, tokens_len: int, stride: int):
+        if chunk_vectors.size(0) == 0:
+            hidden_dim = chunk_vectors.size(-1) if chunk_vectors.dim() == 3 else 768
+            return torch.empty((0, hidden_dim), device=self.device)
+
+        window_size = chunk_masks.size(1)
+        hidden_dim = chunk_vectors.size(2)
+
+        sum_vec = torch.zeros((tokens_len, hidden_dim), device=self.device, dtype=chunk_vectors.dtype)
+        weight_vec = torch.zeros((tokens_len, 1), device=self.device, dtype=chunk_vectors.dtype)
+
+        for chunk_idx in range(chunk_vectors.size(0)):
+            start_idx = chunk_idx * stride
+            end_idx = min(start_idx + window_size, tokens_len)
+            chunk_len = end_idx - start_idx
+
+            mask_expanded = chunk_masks[chunk_idx, :chunk_len].unsqueeze(-1)
+            valid_vectors = chunk_vectors[chunk_idx, 1:chunk_len + 1, :]
+
+            sum_vec[start_idx:end_idx] += valid_vectors * mask_expanded
+            weight_vec[start_idx:end_idx] += mask_expanded
+
+        weight_vec[weight_vec == 0] = 1.0
+        return sum_vec / weight_vec
+
     def detect_peaks(self, semantic_velocity, distance: int, prominence: float = 4.0):
         if isinstance(semantic_velocity, torch.Tensor):
             vel_np = semantic_velocity.cpu().numpy()
@@ -190,10 +217,12 @@ class RagAtini:
 
         chunk_velocities, chunk_masks = self.process_chunk_velocities(chunk_vectors, tokens_len, stride, sigma)
         semantic_velocity = self.mesh_velocities(chunk_velocities, chunk_masks, tokens_len, stride)
+        meshed_vectors = self.mesh_vectors(chunk_vectors, chunk_masks, tokens_len, stride)
 
         semantic_peaks = self.detect_peaks(semantic_velocity, sigma, prominence)
         return RagAtiniResponse(
             velocity=semantic_velocity,
             peaks=semantic_peaks,
-            tokens=tokens
+            tokens=tokens,
+            vectors=meshed_vectors
         )
