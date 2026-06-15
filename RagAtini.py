@@ -102,32 +102,24 @@ class RagAtini:
         velocity[1:] = torch.norm(vectors[1:] - vectors[:-1], dim=1)
         return velocity
 
-    def process_chunk_velocities(self, chunk_vectors, tokens_len: int, stride: int, sigma: int):
-        if chunk_vectors.size(0) == 0:
-            return torch.empty((0, 0), device=self.device, dtype=torch.float32), torch.empty((0, 0), device=self.device,
-                                                                                             dtype=torch.float32)
+    def generate_chunk_masks(self, num_chunks: int, window_size: int, tokens_len: int, stride: int):
+        if num_chunks == 0:
+            return torch.empty((0, 0), device=self.device, dtype=torch.float32)
 
-        window_size = chunk_vectors.size(1) - 2
-        chunk_velocities = torch.zeros((chunk_vectors.size(0), window_size), device=self.device, dtype=torch.float32)
-        chunk_masks = torch.zeros((chunk_vectors.size(0), window_size), device=self.device, dtype=torch.float32)
-
+        chunk_masks = torch.zeros((num_chunks, window_size), device=self.device, dtype=torch.float32)
         base_window = 0.5 * (
                 1.0 - torch.cos(2.0 * torch.pi * torch.arange(window_size, device=self.device) / (window_size - 1)))
 
-        for chunk_idx in range(chunk_vectors.size(0)):
+        for chunk_idx in range(num_chunks):
             start_idx = chunk_idx * stride
             end_idx = min(start_idx + window_size, tokens_len)
             chunk_len = end_idx - start_idx
-
-            valid_vectors = chunk_vectors[chunk_idx, 1:chunk_len + 1, :]
-            smoothed = self.apply_gaussian(valid_vectors, sigma)
-            velocity = self.calculate_velocity(smoothed)
 
             chunk_mask = base_window[:chunk_len].clone()
 
             if chunk_idx == 0:
                 chunk_mask[:chunk_len // 2] = 1.0
-            if chunk_idx == chunk_vectors.size(0) - 1:
+            if chunk_idx == num_chunks - 1:
                 chunk_mask[chunk_len // 2:] = 1.0
                 taper_len = min(256, chunk_len)
                 if taper_len > 1:
@@ -137,29 +129,9 @@ class RagAtini:
                 elif taper_len == 1:
                     chunk_mask[-1] = 0.0
 
-            chunk_velocities[chunk_idx, :chunk_len] = velocity
             chunk_masks[chunk_idx, :chunk_len] = chunk_mask
 
-        return chunk_velocities, chunk_masks
-
-    def mesh_velocities(self, chunk_velocities, chunk_masks, tokens_len: int, stride: int):
-        if chunk_velocities.size(0) == 0:
-            return torch.empty(0, device=self.device)
-
-        window_size = chunk_velocities.size(1)
-        sum_vel = torch.zeros(tokens_len, device=self.device, dtype=chunk_velocities.dtype)
-        weight_vel = torch.zeros(tokens_len, device=self.device, dtype=chunk_velocities.dtype)
-
-        for chunk_idx in range(chunk_velocities.size(0)):
-            start_idx = chunk_idx * stride
-            end_idx = min(start_idx + window_size, tokens_len)
-            chunk_len = end_idx - start_idx
-
-            sum_vel[start_idx:end_idx] += chunk_velocities[chunk_idx, :chunk_len] * chunk_masks[chunk_idx, :chunk_len]
-            weight_vel[start_idx:end_idx] += chunk_masks[chunk_idx, :chunk_len]
-
-        weight_vel[weight_vel == 0] = 1.0
-        return sum_vel / weight_vel
+        return chunk_masks
 
     def mesh_vectors(self, chunk_vectors, chunk_masks, tokens_len: int, stride: int):
         if chunk_vectors.size(0) == 0:
@@ -212,14 +184,23 @@ class RagAtini:
         tokens = self.tokenize(text).squeeze(0)
         tokens_len = tokens.size(0)
 
+        if tokens_len == 0:
+            raise ValueError("Input text resulted in zero tokens. Cannot process empty documents.")
+
         chunks = self.chunk_tokens(tokens, stride)
         chunk_vectors = self.process_chunks(chunks, internal_batch)
 
-        chunk_velocities, chunk_masks = self.process_chunk_velocities(chunk_vectors, tokens_len, stride, sigma)
-        semantic_velocity = self.mesh_velocities(chunk_velocities, chunk_masks, tokens_len, stride)
+        window_size = chunk_vectors.size(1) - 2
+        num_chunks = chunk_vectors.size(0)
+
+        chunk_masks = self.generate_chunk_masks(num_chunks, window_size, tokens_len, stride)
         meshed_vectors = self.mesh_vectors(chunk_vectors, chunk_masks, tokens_len, stride)
 
+        smoothed_vectors = self.apply_gaussian(meshed_vectors, sigma)
+        semantic_velocity = self.calculate_velocity(smoothed_vectors)
+
         semantic_peaks = self.detect_peaks(semantic_velocity, sigma, prominence)
+
         return RagAtiniResponse(
             velocity=semantic_velocity,
             peaks=semantic_peaks,
