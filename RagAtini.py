@@ -192,7 +192,7 @@ class RagAtini:
         sigma = sigma if sigma else self.sigma
 
         tokens = self.tokenize(text).squeeze(0)
-        offsets = self.get_token_offsets(tokens)
+        token_offsets = self.get_token_offsets(tokens)
         tokens_len = tokens.size(0)
 
         if tokens_len == 0:
