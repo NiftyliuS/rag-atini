@@ -63,7 +63,7 @@ def ensemble_segmentation(document_str: str):
     plt.tight_layout()
     plt.show()
 
-    print_results(peaks, response.tokens[:tokens_len], ragAtini.tokenizer)
+    print_results(peaks, response.token_ids[:tokens_len], ragAtini.tokenizer)
 
     return
 
