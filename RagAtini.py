@@ -9,11 +9,13 @@ class RagAtiniResponse:
     def __init__(self,
                  velocity: torch.Tensor,
                  peaks: np.ndarray,
+                 troughs: np.ndarray,
                  token_ids: torch.Tensor,
                  token_vectors: torch.Tensor,
                  ):
         self.velocity = velocity
         self.peaks = peaks
+        self.troughs = troughs
         self.token_ids = token_ids
         self.token_vectors = token_vectors
 
@@ -186,6 +188,23 @@ class RagAtini:
 
         return peaks
 
+    def detect_troughs(self, velocity, peaks):
+        if isinstance(velocity, torch.Tensor):
+            vel_np = velocity.cpu().numpy()
+        else:
+            vel_np = velocity
+
+        troughs = []
+        last_boundary = 0
+        for peak in peaks:
+            curr = peak
+            while curr > last_boundary and vel_np[curr - 1] <= vel_np[curr]:
+                curr -= 1
+            troughs.append(curr)
+            last_boundary = curr
+
+        return np.array(troughs)
+
     def vectorize(self, text: str, internal_batch: int = 1, stride: int = None, sigma: int = None,
                   prominence: float = 4.0):
         stride = stride if stride else self.default_stride
@@ -211,10 +230,12 @@ class RagAtini:
         semantic_velocity = self.calculate_velocity(smoothed_vectors)
 
         semantic_peaks = self.detect_peaks(semantic_velocity, sigma, prominence)
+        semantic_troughs = self.detect_troughs(semantic_velocity, semantic_peaks)
 
         return RagAtiniResponse(
             velocity=semantic_velocity,
             peaks=semantic_peaks,
+            troughs=semantic_troughs,
             token_ids=tokens,
             token_vectors=meshed_vectors
         )
