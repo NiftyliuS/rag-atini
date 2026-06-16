@@ -182,6 +182,10 @@ class RagAtini:
 
         median_vel = np.median(valid_velocity)
         mad = np.median(np.abs(valid_velocity - median_vel))
+
+        if mad == 0:
+            mad = 1e-6
+
         min_prominence = mad * prominence
 
         peaks, _ = find_peaks(vel_np, distance=distance, prominence=min_prominence)
