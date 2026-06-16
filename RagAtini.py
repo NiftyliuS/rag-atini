@@ -39,6 +39,16 @@ class RagAtini:
     def tokenize(self, text: str):
         return self.tokenizer(text, add_special_tokens=False, return_tensors="pt")["input_ids"].to(self.device)
 
+    def get_token_offsets(self, tokens: torch.Tensor):
+        text = self.tokenizer.decode(tokens[0:1], skip_special_tokens=True)
+        offsets = [0]
+        for i in range(0, len(tokens) - 1):
+            offsets.append(len(text))
+            pair = self.tokenizer.decode([tokens[i:i + 1], tokens[i:i + 2]], skip_special_tokens=True)
+            next_token = pair[1][len(pair[0]):]
+            text += next_token
+        return offsets, text
+
     def chunk_tokens(self, tokens, stride):
         window_size = self.max_context_window - 2
         tokens_len = tokens.size(0)
@@ -182,6 +192,7 @@ class RagAtini:
         sigma = sigma if sigma else self.sigma
 
         tokens = self.tokenize(text).squeeze(0)
+        offsets = self.get_token_offsets(tokens)
         tokens_len = tokens.size(0)
 
         if tokens_len == 0:
