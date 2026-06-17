@@ -7,13 +7,20 @@ from scipy.ndimage import gaussian_filter1d
 from scipy.signal import find_peaks
 
 
+def find_boundaries(text: str):
+    boundaries = [m.start() for m in re.finditer(r'(?<=[.!?])\s+|\n+', text)]
+    return boundaries
+
+
 class RagSegment:
     def __init__(self,
                  vector: torch.Tensor,
+                 bound_vector: torch.Tensor,
                  text: str = None,
                  text_coords: tuple[int, int] = None
                  ):
         self.vector = vector
+        self.bound_vector = bound_vector
         self.text = text
         self.text_coords = text_coords
 
@@ -50,6 +57,7 @@ class RagAtini:
         self.default_stride = int(self.max_context_window * 0.25)
         self.sigma = max(10, self.max_context_window // 100)
 
+        self.find_boundaries = find_boundaries
         if hasattr(self.model, "eval"):
             self.model.eval()
 
@@ -191,21 +199,22 @@ class RagAtini:
         else:
             vel_np = semantic_velocity
 
-        valid_velocity = vel_np[distance:]
-        if len(valid_velocity) == 0:
-            return np.array([])
-
-        median_vel = np.median(valid_velocity)
-        mad = np.median(np.abs(valid_velocity - median_vel))
-
-        if mad == 0:
-            mad = 1e-6
-
+        median_vel = np.median(vel_np)
+        mad = min(1e-6, np.median(np.abs(vel_np - median_vel)))
         min_prominence = mad * prominence
 
         peaks, _ = find_peaks(vel_np, distance=distance, prominence=min_prominence)
 
         return peaks
+
+    def snap_to_boundary(self, boundaries, text, segment_start, segment_end):
+        b_start = bisect.bisect_left(boundaries, segment_start)
+        b_end = bisect.bisect_right(boundaries, segment_end)
+
+        first_char = boundaries[b_start]
+        last_char = boundaries[b_end]
+
+        return first_char, last_char, text[first_char:last_char]
 
     def vectorize(self,
                   document: str,
