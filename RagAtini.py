@@ -66,13 +66,17 @@ class RagAtini:
 
     def get_token_offsets(self, tokens: torch.Tensor):
         text = self.tokenizer.decode(tokens[0:1], skip_special_tokens=True)
-        offsets = [0]
+        token_to_char = [0]
+        char_to_token = [0] * len(text)
+
         for i in range(0, len(tokens) - 1):
-            offsets.append(len(text))
+            token_to_char.append(len(text))
             pair = self.tokenizer.decode([tokens[i:i + 1], tokens[i:i + 2]], skip_special_tokens=True)
             next_token = pair[1][len(pair[0]):]
+            char_to_token.extend([i + 1] * len(next_token))
             text += next_token
-        return offsets, text
+
+        return token_to_char, char_to_token, text
 
     def chunk_tokens(self, tokens, stride):
         window_size = self.max_context_window - 2
@@ -244,7 +248,8 @@ class RagAtini:
         semantic_velocity = self.calculate_velocity(smoothed_vectors)
         semantic_peaks = self.detect_peaks(semantic_velocity, sigma, prominence)
 
-        token_offsets, recoded_text = self.get_token_offsets(tokens)
+        token_to_char, char_to_token, recoded_text = self.get_token_offsets(tokens)
+        boundaries = sorted([0] + self.find_boundaries(recoded_text) + [len(recoded_text)-1])
 
         return RagAtiniResponse(
             velocity=semantic_velocity,
