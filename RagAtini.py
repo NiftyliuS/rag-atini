@@ -24,13 +24,15 @@ class RagAtiniResponse:
                  peaks: np.ndarray,
                  token_ids: torch.Tensor,
                  token_vectors: torch.Tensor,
-                 recoded_text: str
+                 recoded_text: str,
+                 segments: list[RagSegment]
                  ):
         self.recoded_text = recoded_text
         self.velocity = velocity
         self.peaks = peaks
         self.token_ids = token_ids
         self.token_vectors = token_vectors
+        self.segments = segments
 
 
 class RagAtini:
