@@ -1,8 +1,21 @@
+import re
+import bisect
 import torch
 import numpy as np
 import copy
 from scipy.ndimage import gaussian_filter1d
 from scipy.signal import find_peaks
+
+
+class RagSegment:
+    def __init__(self,
+                 vector: torch.Tensor,
+                 text: str = None,
+                 text_coords: tuple[int, int] = None
+                 ):
+        self.vector = vector
+        self.text = text
+        self.text_coords = text_coords
 
 
 class RagAtiniResponse:
@@ -11,7 +24,9 @@ class RagAtiniResponse:
                  peaks: np.ndarray,
                  token_ids: torch.Tensor,
                  token_vectors: torch.Tensor,
+                 recoded_text: str
                  ):
+        self.recoded_text = recoded_text
         self.velocity = velocity
         self.peaks = peaks
         self.token_ids = token_ids
@@ -190,17 +205,21 @@ class RagAtini:
 
         return peaks
 
-    def vectorize(self, text: str, internal_batch: int = 1, stride: int = None, sigma: int = None,
-                  prominence: float = 4.0):
+    def vectorize(self,
+                  document: str,
+                  internal_batch: int = 1,
+                  stride: int = None,
+                  sigma: int = None,
+                  prominence: float = 4.0,
+                  ):
         stride = stride if stride else self.default_stride
         sigma = sigma if sigma else self.sigma
 
-        tokens = self.tokenize(text).squeeze(0)
-        token_offsets = self.get_token_offsets(tokens)
+        tokens = self.tokenize(document).squeeze(0)
         tokens_len = tokens.size(0)
 
         if tokens_len == 0:
-            raise ValueError("Input text resulted in zero tokens. Cannot process empty documents.")
+            raise ValueError("Input document resulted in zero tokens. Cannot process empty documents.")
 
         chunks = self.chunk_tokens(tokens, stride)
         chunk_vectors = self.process_chunks(chunks, internal_batch)
@@ -210,15 +229,16 @@ class RagAtini:
 
         chunk_masks = self.generate_chunk_masks(num_chunks, window_size, tokens_len, stride)
         meshed_vectors = self.mesh_vectors(chunk_vectors, chunk_masks, tokens_len, stride)
-
         smoothed_vectors = self.apply_gaussian(meshed_vectors, sigma)
         semantic_velocity = self.calculate_velocity(smoothed_vectors)
-
         semantic_peaks = self.detect_peaks(semantic_velocity, sigma, prominence)
+
+        token_offsets, recoded_text = self.get_token_offsets(tokens)
 
         return RagAtiniResponse(
             velocity=semantic_velocity,
             peaks=semantic_peaks,
             token_ids=tokens,
-            token_vectors=meshed_vectors
+            token_vectors=meshed_vectors,
+            recoded_text=recoded_text
         )
