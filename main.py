@@ -37,7 +37,7 @@ def print_results(peaks, tokens, tokenizer):
 
 
 def align_peaks_to_boundaries(peaks, tokens, ragAtini_instance):
-    offsets, text = ragAtini_instance.get_token_offsets(tokens)
+    offsets,rev, text = ragAtini_instance.get_token_offsets(tokens)
 
     boundaries = [m.start() for m in re.finditer(r'(?<=[.!?])\s+|\n+', text)]
     if not boundaries:

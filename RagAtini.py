@@ -211,14 +211,17 @@ class RagAtini:
 
         return peaks
 
-    def snap_to_boundary(self, boundaries, text, segment_start, segment_end):
-        b_start = bisect.bisect_left(boundaries, segment_start)
-        b_end = bisect.bisect_right(boundaries, segment_end)
+    def snap_to_boundary(self, boundaries, text, segment_start, segment_end, overlap: int = 0):
+        b_start = bisect.bisect_right(boundaries, segment_start) - 1
+        b_end = bisect.bisect_left(boundaries, segment_end)
+
+        b_start = max(0, b_start - overlap)
+        b_end = min(len(boundaries) - 1, b_end + overlap)
 
         first_char = boundaries[b_start]
         last_char = boundaries[b_end]
 
-        return first_char, last_char, text[first_char:last_char]
+        return first_char, last_char, text[first_char:last_char + 1]
 
     def vectorize(self,
                   document: str,
@@ -226,6 +229,7 @@ class RagAtini:
                   stride: int = None,
                   sigma: int = None,
                   prominence: float = 4.0,
+                  overlap: int = 0
                   ):
         stride = stride if stride else self.default_stride
         sigma = sigma if sigma else self.sigma
@@ -249,7 +253,22 @@ class RagAtini:
         semantic_peaks = self.detect_peaks(semantic_velocity, sigma, prominence)
 
         token_to_char, char_to_token, recoded_text = self.get_token_offsets(tokens)
-        boundaries = sorted([0] + self.find_boundaries(recoded_text) + [len(recoded_text)-1])
+        boundaries = sorted([0] + self.find_boundaries(recoded_text) + [len(recoded_text) - 1])
+
+        segments = []
+        offset = 0
+        for peak in np.append(semantic_peaks, len(tokens) - 1):
+            first_char, last_char, segment_text = self.snap_to_boundary(
+                boundaries, recoded_text, token_to_char[offset], token_to_char[peak], overlap
+            )
+
+            segments.append(RagSegment(
+                vector=meshed_vectors[offset:peak].mean(dim=0),
+                bound_vector=meshed_vectors[char_to_token[first_char]:char_to_token[last_char] + 1].mean(dim=0),
+                text=segment_text,
+                text_coords=(first_char, last_char)
+            ))
+            offset = peak
 
         return RagAtiniResponse(
             velocity=semantic_velocity,
@@ -257,5 +276,5 @@ class RagAtini:
             token_ids=tokens,
             token_vectors=meshed_vectors,
             recoded_text=recoded_text,
-            segments=[]
+            segments=segments
         )
