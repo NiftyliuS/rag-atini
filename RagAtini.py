@@ -204,7 +204,7 @@ class RagAtini:
             vel_np = semantic_velocity
 
         median_vel = np.median(vel_np)
-        mad = min(1e-6, np.median(np.abs(vel_np - median_vel)))
+        mad = max(1e-6, np.median(np.abs(vel_np - median_vel)))
         min_prominence = mad * prominence
 
         peaks, _ = find_peaks(vel_np, distance=distance, prominence=min_prominence)
