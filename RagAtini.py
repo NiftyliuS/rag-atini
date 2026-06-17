@@ -242,5 +242,6 @@ class RagAtini:
             peaks=semantic_peaks,
             token_ids=tokens,
             token_vectors=meshed_vectors,
-            recoded_text=recoded_text
+            recoded_text=recoded_text,
+            segments=[]
         )
