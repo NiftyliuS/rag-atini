@@ -90,7 +90,7 @@ def evaluate_retrieval(response, questions, tokenizer, model, device):
     print(f"{'=' * 80}")
     for i, seg in enumerate(response.segments):
         preview = seg.text.replace('\n', ' ')
-        preview = preview if len(preview) <= 120 else preview[:117] + "..."
+        preview = preview if len(preview) <= 120 else preview[:300] + "..."
         print(f"Segment {i:02d} | Tokens: {seg.text_coords} | Text: {preview}")
 
     eval_count = min(len(questions), len(response.segments))
