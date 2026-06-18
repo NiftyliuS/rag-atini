@@ -190,8 +190,7 @@ class RagAtini:
 
             mask_expanded = chunk_masks[chunk_idx, :chunk_len].unsqueeze(-1)
 
-            cls_vector = chunk_vectors[chunk_idx, 0, :].unsqueeze(0)
-            valid_vectors = chunk_vectors[chunk_idx, 1:chunk_len + 1, :] + cls_vector
+            valid_vectors = chunk_vectors[chunk_idx, 1:chunk_len + 1, :]
 
             sum_vec[start_idx:end_idx] += valid_vectors * mask_expanded
             weight_vec[start_idx:end_idx] += mask_expanded
