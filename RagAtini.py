@@ -79,20 +79,16 @@ class RagAtini:
         return token_to_char, char_to_token, text
 
     def chunk_tokens(self, tokens, stride):
-        window_size = self.max_context_window - 2
+        window_size = self.max_context_window - 1
         tokens_len = tokens.size(0)
 
         cls_id = self.tokenizer.cls_token_id if self.tokenizer.cls_token_id is not None else 0
-        sep_id = self.tokenizer.sep_token_id if self.tokenizer.sep_token_id is not None else 0
-
         cls_tensor = torch.tensor([cls_id], dtype=torch.long, device=self.device)
-        sep_tensor = torch.tensor([sep_id], dtype=torch.long, device=self.device)
 
         chunks = []
         for i in range(0, max(1, tokens_len), stride):
             chunk = tokens[i:i + window_size]
-
-            chunk_with_special = torch.cat([cls_tensor, chunk, sep_tensor])
+            chunk_with_special = torch.cat([cls_tensor, chunk])
 
             if chunk_with_special.size(0) < self.max_context_window:
                 pad_tensor = torch.full((self.max_context_window - chunk_with_special.size(0),), self.pad_id,
@@ -243,7 +239,7 @@ class RagAtini:
         chunks = self.chunk_tokens(tokens, stride)
         chunk_vectors = self.process_chunks(chunks, internal_batch)
 
-        window_size = chunk_vectors.size(1) - 2
+        window_size = chunk_vectors.size(1) - 1
         num_chunks = chunk_vectors.size(0)
 
         chunk_masks = self.generate_chunk_masks(num_chunks, window_size, tokens_len, stride)
