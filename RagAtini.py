@@ -265,7 +265,7 @@ class RagAtini:
             segments.append(RagSegment(
                 vector=meshed_vectors[offset:peak].mean(dim=0),
                 bound_vector=meshed_vectors[char_to_token[first_char]:char_to_token[last_char] + 1].mean(dim=0),
-                text=segment_text,
+                text=segment_text.strip(),
                 text_coords=(first_char, last_char)
             ))
             offset = peak
