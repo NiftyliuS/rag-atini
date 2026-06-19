@@ -64,7 +64,7 @@ def embed_query(query: str, tokenizer, model, device) -> torch.Tensor:
         outputs = model(**inputs).last_hidden_state
         cls_vector = outputs[0, 0, :]
 
-        return  cls_vector
+        return cls_vector
 
 
 def compare(query: str, peak_vec: torch.Tensor, bound_vec: torch.Tensor, tokenizer, model, device):
@@ -100,67 +100,81 @@ def evaluate_retrieval(response, questions, tokenizer, model, device):
     p_vecs = F.normalize(torch.stack([s.vector for s in response.segments]), p=2, dim=1)
     b_vecs = F.normalize(torch.stack([s.bound_vector for s in response.segments]), p=2, dim=1)
 
+    t_vecs_list = []
+    for s in response.segments:
+        if s.text:
+            t_vecs_list.append(embed_query(s.text, tokenizer, model, device))
+        else:
+            t_vecs_list.append(torch.zeros(p_vecs.size(1), device=device))
+    t_vecs = F.normalize(torch.stack(t_vecs_list), p=2, dim=1)
+
     def get_scores(query: str):
         q_vec = embed_query(query, tokenizer, model, device)
         q_vec = F.normalize(q_vec, p=2, dim=0).unsqueeze(0)
 
         p_scores = F.cosine_similarity(q_vec, p_vecs).cpu().numpy()
         b_scores = F.cosine_similarity(q_vec, b_vecs).cpu().numpy()
-        return p_scores, b_scores
+        t_scores = F.cosine_similarity(q_vec, t_vecs).cpu().numpy()
+        return p_scores, b_scores, t_scores
 
     def format_text(text):
         cleaned = str(text).replace('\n', ' ').strip()
         return cleaned if len(cleaned) <= 100 else cleaned[:97] + "..."
 
     q_minus1 = "Why did the chicken cross the road?"
-    p_scores, b_scores = get_scores(q_minus1)
+    p_scores, b_scores, t_scores = get_scores(q_minus1)
 
     best_p_idx = int(np.argmax(p_scores))
     best_b_idx = int(np.argmax(b_scores))
+    best_t_idx = int(np.argmax(t_scores))
 
     print(f"\nQ[-1]: {q_minus1}")
-    print(f"PEAK : {p_scores[0]:.4f}")
     print(
-        f"PEAK_WINNER: seg {best_p_idx}[{p_scores[best_p_idx]:.4f}]: {format_text(response.segments[best_p_idx].text)}")
-    print(f"BOUND: {b_scores[0]:.4f}")
+        f"PEAK : {p_scores[0]:.4f} | WINNER: seg {best_p_idx}[{p_scores[best_p_idx]:.4f}]: {format_text(response.segments[best_p_idx].text)}")
     print(
-        f"BOUND_WINNER: seg {best_b_idx}[{b_scores[best_b_idx]:.4f}]: {format_text(response.segments[best_b_idx].text)}")
+        f"BOUND: {b_scores[0]:.4f} | WINNER: seg {best_b_idx}[{b_scores[best_b_idx]:.4f}]: {format_text(response.segments[best_b_idx].text)}")
+    print(
+        f"TEXT : {t_scores[0]:.4f} | WINNER: seg {best_t_idx}[{t_scores[best_t_idx]:.4f}]: {format_text(response.segments[best_t_idx].text)}")
 
     peak_wins = 0
     bound_wins = 0
+    text_wins = 0
 
     for i in range(eval_count):
         question = questions[i]
-        p_scores, b_scores = get_scores(question)
+        p_scores, b_scores, t_scores = get_scores(question)
 
         best_p_idx = int(np.argmax(p_scores))
         best_b_idx = int(np.argmax(b_scores))
+        best_t_idx = int(np.argmax(t_scores))
 
         exp_p = p_scores[i]
         exp_b = b_scores[i]
+        exp_t = t_scores[i]
 
-        diff = exp_p - exp_b
+        best_exp = max(exp_p, exp_b, exp_t)
 
-        if exp_p > exp_b:
+        if best_exp == exp_t:
+            winner = "TEXT"
+            text_wins += 1
+        elif best_exp == exp_p:
             winner = "PEAK"
             peak_wins += 1
-        elif exp_b > exp_p:
+        else:
             winner = "BOUND"
             bound_wins += 1
-        else:
-            winner = "TIE"
 
         print(f"\nQ[{i}]: {question}")
-        print(f"PEAK : {exp_p:.4f}")
         print(
-            f"PEAK_WINNER: seg {best_p_idx}[{p_scores[best_p_idx]:.4f}]: {format_text(response.segments[best_p_idx].text)}")
-        print(f"BOUND: {exp_b:.4f}")
+            f"PEAK : {exp_p:.4f} | WINNER: seg {best_p_idx}[{p_scores[best_p_idx]:.4f}]: {format_text(response.segments[best_p_idx].text)}")
         print(
-            f"BOUND_WINNER: seg {best_b_idx}[{b_scores[best_b_idx]:.4f}]: {format_text(response.segments[best_b_idx].text)}")
-        print(f"Winner: {winner} (Δ {abs(diff):.4f})")
+            f"BOUND: {exp_b:.4f} | WINNER: seg {best_b_idx}[{b_scores[best_b_idx]:.4f}]: {format_text(response.segments[best_b_idx].text)}")
+        print(
+            f"TEXT : {exp_t:.4f} | WINNER: seg {best_t_idx}[{t_scores[best_t_idx]:.4f}]: {format_text(response.segments[best_t_idx].text)}")
+        print(f"Winner: {winner}")
 
     print(f"\n{'=' * 80}")
-    print(f"DIRECT MATCH WINS -> PEAK: {peak_wins} | BOUND: {bound_wins}")
+    print(f"DIRECT MATCH WINS -> PEAK: {peak_wins} | BOUND: {bound_wins} | TEXT: {text_wins}")
     print(f"{'=' * 80}\n")
 
 
