@@ -64,7 +64,7 @@ def embed_query(query: str, tokenizer, model, device) -> torch.Tensor:
         outputs = model(**inputs).last_hidden_state
         cls_vector = outputs[0, 0, :]
 
-        return  outputs[0, 1:-1, :].mean(dim=0)
+        return  cls_vector
 
 
 def compare(query: str, peak_vec: torch.Tensor, bound_vec: torch.Tensor, tokenizer, model, device):
