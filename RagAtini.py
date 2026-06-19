@@ -3,43 +3,33 @@ import bisect
 import torch
 import numpy as np
 import copy
+from dataclasses import dataclass
+from typing import List, Tuple, Optional
 from scipy.ndimage import gaussian_filter1d
 from scipy.signal import find_peaks
 
 
-def find_boundaries(text: str):
+def find_boundaries(text: str) -> List[int]:
     boundaries = [m.start() for m in re.finditer(r'(?<=[.!?])\s+|\n+', text)]
     return boundaries
 
 
+@dataclass
 class RagSegment:
-    def __init__(self,
-                 vector: torch.Tensor,
-                 bound_vector: torch.Tensor,
-                 text: str = None,
-                 text_coords: tuple[int, int] = None
-                 ):
-        self.vector = vector
-        self.bound_vector = bound_vector
-        self.text = text
-        self.text_coords = text_coords
+    vector: torch.Tensor
+    bound_vector: torch.Tensor
+    text: Optional[str] = None
+    text_coords: Optional[Tuple[int, int]] = None
 
 
+@dataclass
 class RagAtiniResponse:
-    def __init__(self,
-                 velocity: torch.Tensor,
-                 peaks: np.ndarray,
-                 token_ids: torch.Tensor,
-                 token_vectors: torch.Tensor,
-                 recoded_text: str,
-                 segments: list[RagSegment]
-                 ):
-        self.recoded_text = recoded_text
-        self.velocity = velocity
-        self.peaks = peaks
-        self.token_ids = token_ids
-        self.token_vectors = token_vectors
-        self.segments = segments
+    velocity: torch.Tensor
+    peaks: np.ndarray
+    token_ids: torch.Tensor
+    token_vectors: torch.Tensor
+    recoded_text: str
+    segments: List[RagSegment]
 
 
 class RagAtini:
