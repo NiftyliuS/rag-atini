@@ -10,7 +10,7 @@ from scipy.signal import find_peaks
 
 
 def find_boundaries(text: str) -> List[int]:
-    boundaries = [m.start() for m in re.finditer(r'(?<=[.!?])\s+|\n+', text)]
+    boundaries = [m.start() for m in re.finditer(r'(?<=[.!?])\s+', text)]
     return boundaries
 
 
@@ -33,16 +33,20 @@ class RagAtiniResponse:
 
 
 class RagAtini:
-    def __init__(self, model, tokenizer, model_max_length=None):
+    def __init__(self, model, tokenizer, max_chunk_length=None, doc_prefix="search_document: "):
         self.model = model
         self.device = next(self.model.parameters()).device if hasattr(self.model, "parameters") else "cpu"
 
-        self.max_context_window = model_max_length if model_max_length else getattr(tokenizer, "model_max_length", 8192)
+        self.max_context_window = max_chunk_length if max_chunk_length else getattr(tokenizer, "model_max_length", 8192)
         assert self.max_context_window, "Failed to resolve max_context_window"
 
         self.tokenizer = copy.deepcopy(tokenizer)
         self.tokenizer.model_max_length = int(1e9)
         self.pad_id = self.tokenizer.pad_token_id if self.tokenizer.pad_token_id is not None else 0
+
+        self.prefix_ids = (self.tokenizer(doc_prefix, add_special_tokens=True)["input_ids"]
+                           if doc_prefix else [])
+        self.prefix_len = len(self.prefix_ids)
 
         self.default_stride = int(self.max_context_window * 0.25)
         self.sigma = max(10, self.max_context_window // 100)
