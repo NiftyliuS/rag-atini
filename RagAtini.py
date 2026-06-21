@@ -117,7 +117,7 @@ class RagAtini:
         if tokens_len == 0:
             return vectors
 
-        vectors_np = vectors.cpu().numpy()
+        vectors_np = vectors.float().cpu().numpy()
         smoothed_np = gaussian_filter1d(vectors_np, sigma=sigma, axis=0)
 
         return torch.tensor(smoothed_np, device=self.device, dtype=vectors.dtype)
