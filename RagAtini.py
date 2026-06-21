@@ -43,8 +43,10 @@ class RagAtini:
         self.tokenizer = copy.deepcopy(tokenizer)
         self.tokenizer.model_max_length = int(1e9)
         self.pad_id = self.tokenizer.pad_token_id if self.tokenizer.pad_token_id is not None else 0
+        self.cls_id = self.tokenizer.cls_token_id if self.tokenizer.cls_token_id is not None else self.tokenizer.bos_token_id
+        self.sep_id = self.tokenizer.sep_token_id if self.tokenizer.sep_token_id is not None else self.tokenizer.eos_token_id
 
-        self.prefix_ids = (self.tokenizer(doc_prefix, add_special_tokens=True)["input_ids"]
+        self.prefix_ids = (self.tokenizer(doc_prefix, add_special_tokens=False)["input_ids"]
                            if doc_prefix else [])
         self.prefix_len = len(self.prefix_ids)
 
@@ -73,27 +75,25 @@ class RagAtini:
         return token_to_char, char_to_token, text
 
     def chunk_tokens(self, tokens, stride):
-        window_size = self.max_context_window - 2
+        window_size = self.max_context_window - self.prefix_len - 2
         tokens_len = tokens.size(0)
 
-        cls_id = self.tokenizer.cls_token_id if self.tokenizer.cls_token_id is not None else 0
-        sep_id = self.tokenizer.sep_token_id if self.tokenizer.sep_token_id is not None else 0
-
-        cls_tensor = torch.tensor([cls_id], dtype=torch.long, device=self.device)
-        sep_tensor = torch.tensor([sep_id], dtype=torch.long, device=self.device)
+        prefix_tensor = torch.tensor(self.prefix_ids, dtype=torch.long, device=self.device)
+        cls_tensor = torch.tensor([self.cls_id], dtype=torch.long, device=self.device)
+        sep_tensor = torch.tensor([self.sep_id], dtype=torch.long, device=self.device)
 
         chunks = []
         for i in range(0, max(1, tokens_len), stride):
             chunk = tokens[i:i + window_size]
 
-            chunk_with_special = torch.cat([cls_tensor, chunk, sep_tensor])
+            chunk_ids = torch.cat([cls_tensor, prefix_tensor, chunk, sep_tensor])
 
-            if chunk_with_special.size(0) < self.max_context_window:
-                pad_tensor = torch.full((self.max_context_window - chunk_with_special.size(0),), self.pad_id,
+            if chunk_ids.size(0) < self.max_context_window:
+                pad_tensor = torch.full((self.max_context_window - chunk_ids.size(0),), self.pad_id,
                                         dtype=torch.long, device=self.device)
-                chunk_with_special = torch.cat([chunk_with_special, pad_tensor])
+                chunk_ids = torch.cat([chunk_ids, pad_tensor])
 
-            chunks.append(chunk_with_special)
+            chunks.append(chunk_ids)
 
             if i + window_size >= tokens_len:
                 break
@@ -184,7 +184,7 @@ class RagAtini:
 
             mask_expanded = chunk_masks[chunk_idx, :chunk_len].unsqueeze(-1)
 
-            valid_vectors = chunk_vectors[chunk_idx, 1:chunk_len + 1, :]
+            valid_vectors = chunk_vectors[chunk_idx, 1 + self.prefix_len:1 + self.prefix_len + chunk_len, :]
 
             sum_vec[start_idx:end_idx] += valid_vectors * mask_expanded
             weight_vec[start_idx:end_idx] += mask_expanded
@@ -238,7 +238,7 @@ class RagAtini:
         chunks = self.chunk_tokens(tokens, stride)
         chunk_vectors = self.process_chunks(chunks, internal_batch)
 
-        window_size = chunk_vectors.size(1) - 2
+        window_size = chunk_vectors.size(1) - self.prefix_len - 2
         num_chunks = chunk_vectors.size(0)
 
         chunk_masks = self.generate_chunk_masks(num_chunks, window_size, tokens_len, stride)

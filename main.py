@@ -8,67 +8,64 @@ from RagAtini import RagAtini
 DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
 
 model_name = "BAAI/bge-m3"
+model_name = "nomic-ai/modernbert-embed-base"
 tokenizer = AutoTokenizer.from_pretrained(model_name)
 model = AutoModel.from_pretrained(model_name).to(DEVICE)
 ragAtini = RagAtini(model, tokenizer)
 
 EVALUATION_QUESTIONS = [
-    "Who are the independent researchers that authored Clip to Grok?",
-    "In Figure 1's single-seed demonstration on the 2-layer architecture, what is the exact beta2 value used for Lion?",
-    "In the listed contributions, what specific task correlates with the max_norm hyperparameter?",
-    "In the Method section for weight norm clipping, what mathematical formula is used to project every weight row onto the l2 ball of radius c?",
-    "In Algorithm 1's project_to_sphere function, what variable is divided by the clamped norm?",
-    "In the asymmetric design rationale table, what layers are initialized to c but not clipped for shallow networks?",
-    "In the experimental setup, what is the exact convergence criterion used for the modular multiplication task?",
-    "In Figure 2's single-run training dynamics, exactly how many steps does it take the AdamW baseline to reach 95% validation?",
-    "When decomposing the 66x speedup, what is the exact 2-layer median step count for Adam+Clip?",
-    "In the 2-layer seed stability table, what is the 95th percentile (P95) step count for SignSGD with no init_norm?",
-    "In Figure 3's multi-seed accuracy caption, what are the exact learning rates listed for Adam, Lion, and SignSGD?",
-    "In the data-scarce regime, what specifically provides the directional consistency needed when fewer training examples are available per step?",
-    "In the 8-layer edge initialization experiments, what specific depth-dependent learning rate is assigned to Lion?",
-    "In Figure 5's Softmax Collapse illustration, what is the exact value that individual seeds spike to for validation loss?",
-    "According to the main result for edge initialization, what is the exact IQR reduction percentage for SignSGD?",
-    "In the 8-layer architecture table, what is the exact median step count for the AdamW baseline without clipping?",
-    "At the lower extreme scale robustness test, what exact learning rate produces unstable grokking around 3,000 steps for the 9.8k parameter model?",
-    "In the max_norm selection table for modular multiplication, what is the median step count for SignSGD at max_norm 1.0?",
-    "According to the U-shaped trade-off visualization text, which optimizer degrades gracefully but slows 4x at a max_norm of 2.5?",
-    "In the single modular arithmetic tasks table, what is the exact median step count for the add-p97 task at a max_norm of 1.75?",
-    "Which specific operations favor a max_norm of 1.5 to 1.75 because they require modular inversion?",
-    "In the multi-task and non-abelian tasks table, what is the median step count for all-mod at max_norm 1.25?",
-    "For the all-mod task's batch size adjustment, what is the resulting concatenated training set batch size calculation?",
-    "In the cross-task speedups table, what is the exact AdamW step count for the all-mod task?",
-    "What specific failure mode occurs when Lion without clipping is applied to the S5 task?",
-    "In the Lion Learning Rate Stability setup, how many seeds are used per learning rate?",
-    "What loose bound value is suggested for optionally clipping the output head to suppress post-convergence oscillation?",
-    "If the clipping threshold c is approximately equal to wc, what does the natural log of w0 divided by wc approach?",
-    "In the motivating calculation for the homogeneous case, what is the approximate value of alpha to the power of L when L equals 8?",
-    "In residual networks, what exact mathematical perturbation formula do skip connections convert the exponential alpha L risk into?",
-    "Under the Grokfast EMA filter equations, what does v-hat sub t approximately equal when driving updates toward plus or minus 1?",
-    "According to the Softmax Collapse section, what specific floating-point precision format overflows and causes absorption errors?",
-    "Which authors provided mechanistic interpretability by identifying Fourier multiplication circuits and three training phases?",
-    "What specific gradient modification method did Prieto et al. [2025] use to address Softmax Collapse?",
-    "In the comparison with Karras et al. [2024], what specific target norm value does the EDM2 approach force each weight row to?",
-    "Which paper showed that the Muon optimizer accelerates grokking via spectral norm control?",
-    "What specific representation-space normalization method is suggested for combination with norm clipping in language model pretraining?",
-    "What exact version of PyTorch and CUDA were used for all experiments?",
-    "In the references, who are the authors of the 2024 paper 'Deep grokking: Would deep neural networks generalize better?'",
-    "In the references, what is the exact title of the 2024 paper by Lyu, Jin, Li, Du, Lee, and Hu?",
-    "In the references, what is the arXiv preprint number for the paper 'Lions and muons: Optimization via stochastic FrankWolfe'?",
-    "In the references, what is the exact title of the 2025 paper by Xu et al. published in ICLR?"
+    ("What weight-norm intervention on decoder layers accelerates grokking, and across how many algebraic tasks?", 0),
+    ("Which four established frameworks does the analysis connect weight norm clipping to?", 1),
+    ("When did Power et al. first document grokking and on what kind of datasets?", 2),
+    ("What speedup does clipping achieve on modular multiplication at 2-layer versus 8-layer?", 3),
+    ("Per the contributions, what does the only hyperparameter max_norm correlate with?", 4),
+    ("In equation (1), what does each weight row get multiplied by to project onto the l2 ball of radius c?", 5),
+    ("In project_to_sphere, the parameter is multiplied by c and divided by what?", 6),
+    ("For edge initialization, which three components are projected to norm c before training?", 7),
+    ("What is the convergence criterion and train/validation split for the modular multiplication setup?", 8),
+    ("How many steps does the AdamW baseline require to generalize on 2-layer modular multiplication?", 9),
+    ("In the 2-layer seed stability table, what is the P95 step count for SignSGD with no init_norm?", 10),
+    ("At init_norm=2.0, which optimizer achieves the fastest median and what is its IQR?", 11),
+    ("Under the 25/75 data-scarce split, what happens to Adam+Clip and SignSGD?", 12),
+    ("In the 8-layer AdamW baseline, what value do individual seeds' validation loss spike to?", 13),
+    ("What IQR reduction does edge initialization give for Lion, Adam, and SignSGD?", 14),
+    ("In the 8-layer table, what is the median step count for AdamW with no clipping?", 15),
+    ("On the 9.8k-parameter model, what learning rate produces unstable grokking around 3,000 steps?", 16),
+    ("In Table 3, what is SignSGD's median step count at max_norm 1.0?", 17),
+    ("Why is max_norm below 2.0 too tight for modular multiplication?", 18),
+    ("In Table 4, what is the add-p97 median step count at max_norm 1.75?", 19),
+    ("Which operations favor max_norm 1.5-1.75 because they require modular inversion?", 20),
+    ("In Table 5, what is the all-mod median step count at max_norm 1.25?", 21),
+    ("How is the all-mod batch size of 2048 derived?", 22),
+    ("In the cross-task speedups table, what are the AdamW steps and speedup for mul-p97?", 23),
+    ("What does Lion without clipping do on the S5 task?", 24),
+    ("What max_norm and speedup are reported for the S5 permutation panel?", 25),
+    ("In the Lion learning-rate stability setup, how many LRs and seeds per LR are used?", 26),
+    ("In section 4.1, what does the grokking timescale collapse to when c approaches wc?", 27),
+    ("In the homogeneous motivating calculation, what is alpha^L at L=2 versus L=8?", 28),
+    ("What l-infinity constrained optimization does Lion with weight decay solve, per Chen et al. [2024]?", 29),
+    ("In the Grokfast-to-sign-based derivation, what does Adam's second-moment normalization drive updates toward?",
+     30),
+    ("In the Softmax Collapse explanation, what floating-point overflow causes absorption errors?", 31),
+    ("Who identified Fourier multiplication circuits and three training phases?", 32),
+    ("What does nGPT normalize all vectors to, and for what LM speedup?", 33),
+    ("Which optimizer did Tveit et al. [2025] show accelerates grokking via spectral norm control?", 34),
+    ("What is named as the most direct future-work extension for norm clipping?", 35),
+    ("What is the title of the Chen et al. [2023] paper in the references?", 36),
+    ("What is the arXiv number for Sfyraki & Wang's 'Lions and muons' paper?", 37),
 ]
 
 
 def embed_query(query: str, tokenizer, model, device) -> torch.Tensor:
-    inputs = tokenizer(query, return_tensors="pt", truncation=True, max_length=8192).to(device)
+    inputs = tokenizer(query, return_tensors="pt",
+                       truncation=True, max_length=8192).to(device)
     with torch.no_grad():
-        outputs = model(**inputs).last_hidden_state
-        cls_vector = outputs[0, 0, :]
-
-        return cls_vector
+        outputs = model(**inputs).last_hidden_state[0]  # (T, H)
+        return outputs.mean(dim=0)
 
 
 def compare(query: str, peak_vec: torch.Tensor, bound_vec: torch.Tensor, tokenizer, model, device):
-    q_vec = embed_query(query, tokenizer, model, device)
+    q_vec = embed_query("search_query: "+query, tokenizer, model, device)
 
     q_vec = F.normalize(q_vec, p=2, dim=0)
     p_vec = F.normalize(peak_vec, p=2, dim=0)
@@ -85,96 +82,59 @@ def evaluate_retrieval(response, questions, tokenizer, model, device):
         print("No segments generated. Aborting evaluation.")
         return
 
-    print(f"\n{'=' * 80}")
-    print("EXTRACTED SEGMENTS")
-    print(f"{'=' * 80}")
+    n_seg = len(response.segments)
+    print(f"\n{'=' * 80}\nEXTRACTED SEGMENTS\n{'=' * 80}")
     for i, seg in enumerate(response.segments):
         preview = seg.text.replace('\n', ' ')
         preview = preview if len(preview) <= 120 else preview[:300] + "..."
-        print(f"Segment {i:02d} | Tokens: {seg.text_coords} | Text: {preview}")
-
-    eval_count = min(len(questions), len(response.segments))
-
-    print(f"\n{'=' * 80}\nEvaluating explicit targets vs actual winners...\n{'=' * 80}")
+        print(f"Segment {i:02d} | Coords: {seg.text_coords} | Text: {preview}")
 
     p_vecs = F.normalize(torch.stack([s.vector for s in response.segments]), p=2, dim=1)
     b_vecs = F.normalize(torch.stack([s.bound_vector for s in response.segments]), p=2, dim=1)
-
-    t_vecs_list = []
-    for s in response.segments:
-        if s.text:
-            t_vecs_list.append(embed_query(s.text, tokenizer, model, device))
-        else:
-            t_vecs_list.append(torch.zeros(p_vecs.size(1), device=device))
-    t_vecs = F.normalize(torch.stack(t_vecs_list), p=2, dim=1)
+    t_vecs = F.normalize(torch.stack([
+        embed_query("search_document: " + s.text, tokenizer, model, device) if s.text
+        else torch.zeros(p_vecs.size(1), device=device)
+        for s in response.segments
+    ]), p=2, dim=1)
 
     def get_scores(query: str):
-        q_vec = embed_query(query, tokenizer, model, device)
-        q_vec = F.normalize(q_vec, p=2, dim=0).unsqueeze(0)
+        q = F.normalize(embed_query("search_query: "+query, tokenizer, model, device), p=2, dim=0).unsqueeze(0)
+        return (F.cosine_similarity(q, p_vecs).cpu().numpy(),
+                F.cosine_similarity(q, b_vecs).cpu().numpy(),
+                F.cosine_similarity(q, t_vecs).cpu().numpy())
 
-        p_scores = F.cosine_similarity(q_vec, p_vecs).cpu().numpy()
-        b_scores = F.cosine_similarity(q_vec, b_vecs).cpu().numpy()
-        t_scores = F.cosine_similarity(q_vec, t_vecs).cpu().numpy()
-        return p_scores, b_scores, t_scores
+    def fmt(t):
+        c = str(t).replace('\n', ' ').strip()
+        return c if len(c) <= 100 else c[:97] + "..."
 
-    def format_text(text):
-        cleaned = str(text).replace('\n', ' ').strip()
-        return cleaned if len(cleaned) <= 100 else cleaned[:97] + "..."
+    print(f"\n{'=' * 80}\nTop-1 retrieval vs target segment\n{'=' * 80}")
+    peak_hits = bound_hits = text_hits = total = 0
 
-    q_minus1 = "Why did the chicken cross the road?"
-    p_scores, b_scores, t_scores = get_scores(q_minus1)
+    for question, target in questions:
+        if target >= n_seg:  # target chunk doesn't exist in this run
+            print(f"\nQ: {question}\n  SKIP (target seg {target} >= {n_seg} segments)")
+            continue
+        total += 1
+        p, b, t = get_scores(question)
+        bp, bb, bt = int(np.argmax(p)), int(np.argmax(b)), int(np.argmax(t))
+        ph, bh, th = bp == target, bb == target, bt == target
+        peak_hits += ph;
+        bound_hits += bh;
+        text_hits += th
 
-    best_p_idx = int(np.argmax(p_scores))
-    best_b_idx = int(np.argmax(b_scores))
-    best_t_idx = int(np.argmax(t_scores))
-
-    print(f"\nQ[-1]: {q_minus1}")
-    print(
-        f"PEAK : {p_scores[0]:.4f} | WINNER: seg {best_p_idx}[{p_scores[best_p_idx]:.4f}]: {format_text(response.segments[best_p_idx].text)}")
-    print(
-        f"BOUND: {b_scores[0]:.4f} | WINNER: seg {best_b_idx}[{b_scores[best_b_idx]:.4f}]: {format_text(response.segments[best_b_idx].text)}")
-    print(
-        f"TEXT : {t_scores[0]:.4f} | WINNER: seg {best_t_idx}[{t_scores[best_t_idx]:.4f}]: {format_text(response.segments[best_t_idx].text)}")
-
-    peak_wins = 0
-    bound_wins = 0
-    text_wins = 0
-
-    for i in range(eval_count):
-        question = questions[i]
-        p_scores, b_scores, t_scores = get_scores(question)
-
-        best_p_idx = int(np.argmax(p_scores))
-        best_b_idx = int(np.argmax(b_scores))
-        best_t_idx = int(np.argmax(t_scores))
-
-        exp_p = p_scores[i]
-        exp_b = b_scores[i]
-        exp_t = t_scores[i]
-
-        best_exp = max(exp_p, exp_b, exp_t)
-
-        if best_exp == exp_t:
-            winner = "TEXT"
-            text_wins += 1
-        elif best_exp == exp_p:
-            winner = "PEAK"
-            peak_wins += 1
-        else:
-            winner = "BOUND"
-            bound_wins += 1
-
-        print(f"\nQ[{i}]: {question}")
+        print(f"\nQ: {question}\n  target=seg{target}")
         print(
-            f"PEAK : {exp_p:.4f} | WINNER: seg {best_p_idx}[{p_scores[best_p_idx]:.4f}]: {format_text(response.segments[best_p_idx].text)}")
+            f"  PEAK  hit={ph!s:5} score@target={p[target]:.4f}  top1=seg{bp}[{p[bp]:.4f}] {fmt(response.segments[bp].text)}")
         print(
-            f"BOUND: {exp_b:.4f} | WINNER: seg {best_b_idx}[{b_scores[best_b_idx]:.4f}]: {format_text(response.segments[best_b_idx].text)}")
+            f"  BOUND hit={bh!s:5} score@target={b[target]:.4f}  top1=seg{bb}[{b[bb]:.4f}] {fmt(response.segments[bb].text)}")
         print(
-            f"TEXT : {exp_t:.4f} | WINNER: seg {best_t_idx}[{t_scores[best_t_idx]:.4f}]: {format_text(response.segments[best_t_idx].text)}")
-        print(f"Winner: {winner}")
+            f"  TEXT  hit={th!s:5} score@target={t[target]:.4f}  top1=seg{bt}[{t[bt]:.4f}] {fmt(response.segments[bt].text)}")
 
     print(f"\n{'=' * 80}")
-    print(f"DIRECT MATCH WINS -> PEAK: {peak_wins} | BOUND: {bound_wins} | TEXT: {text_wins}")
+    print(f"TOP-1 ACCURACY over {total} scored questions  ->  "
+          f"PEAK: {peak_hits}/{total} ({peak_hits / total:.0%}) | "
+          f"BOUND: {bound_hits}/{total} ({bound_hits / total:.0%}) | "
+          f"TEXT: {text_hits}/{total} ({text_hits / total:.0%})")
     print(f"{'=' * 80}\n")
 
 
