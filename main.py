@@ -64,17 +64,15 @@ def embed_query(query: str, tokenizer, model, device) -> torch.Tensor:
         return outputs.mean(dim=0)
 
 
-def compare(query: str, peak_vec: torch.Tensor, bound_vec: torch.Tensor, tokenizer, model, device):
-    q_vec = embed_query("search_query: "+query, tokenizer, model, device)
+def compare(query: str, peak_vec: torch.Tensor, tokenizer, model, device):
+    q_vec = embed_query("search_query: " + query, tokenizer, model, device)
 
     q_vec = F.normalize(q_vec, p=2, dim=0)
     p_vec = F.normalize(peak_vec, p=2, dim=0)
-    b_vec = F.normalize(bound_vec, p=2, dim=0)
 
     p_score = F.cosine_similarity(q_vec.unsqueeze(0), p_vec.unsqueeze(0)).item()
-    b_score = F.cosine_similarity(q_vec.unsqueeze(0), b_vec.unsqueeze(0)).item()
 
-    return p_score, b_score
+    return p_score
 
 
 def evaluate_retrieval(response, questions, tokenizer, model, device):
@@ -90,7 +88,6 @@ def evaluate_retrieval(response, questions, tokenizer, model, device):
         print(f"Segment {i:02d} | Coords: {seg.text_coords} | Text: {preview}")
 
     p_vecs = F.normalize(torch.stack([s.vector for s in response.segments]), p=2, dim=1)
-    b_vecs = F.normalize(torch.stack([s.bound_vector for s in response.segments]), p=2, dim=1)
     t_vecs = F.normalize(torch.stack([
         embed_query("search_document: " + s.text, tokenizer, model, device) if s.text
         else torch.zeros(p_vecs.size(1), device=device)
@@ -98,9 +95,8 @@ def evaluate_retrieval(response, questions, tokenizer, model, device):
     ]), p=2, dim=1)
 
     def get_scores(query: str):
-        q = F.normalize(embed_query("search_query: "+query, tokenizer, model, device), p=2, dim=0).unsqueeze(0)
+        q = F.normalize(embed_query("search_query: " + query, tokenizer, model, device), p=2, dim=0).unsqueeze(0)
         return (F.cosine_similarity(q, p_vecs).cpu().numpy(),
-                F.cosine_similarity(q, b_vecs).cpu().numpy(),
                 F.cosine_similarity(q, t_vecs).cpu().numpy())
 
     def fmt(t):
@@ -108,32 +104,28 @@ def evaluate_retrieval(response, questions, tokenizer, model, device):
         return c if len(c) <= 100 else c[:97] + "..."
 
     print(f"\n{'=' * 80}\nTop-1 retrieval vs target segment\n{'=' * 80}")
-    peak_hits = bound_hits = text_hits = total = 0
+    peak_hits = text_hits = total = 0
 
     for question, target in questions:
         if target >= n_seg:  # target chunk doesn't exist in this run
             print(f"\nQ: {question}\n  SKIP (target seg {target} >= {n_seg} segments)")
             continue
         total += 1
-        p, b, t = get_scores(question)
-        bp, bb, bt = int(np.argmax(p)), int(np.argmax(b)), int(np.argmax(t))
-        ph, bh, th = bp == target, bb == target, bt == target
-        peak_hits += ph;
-        bound_hits += bh;
+        p, t = get_scores(question)
+        bp, bt = int(np.argmax(p)), int(np.argmax(t))
+        ph, th = bp == target, bt == target
+        peak_hits += ph
         text_hits += th
 
         print(f"\nQ: {question}\n  target=seg{target}")
         print(
             f"  PEAK  hit={ph!s:5} score@target={p[target]:.4f}  top1=seg{bp}[{p[bp]:.4f}] {fmt(response.segments[bp].text)}")
         print(
-            f"  BOUND hit={bh!s:5} score@target={b[target]:.4f}  top1=seg{bb}[{b[bb]:.4f}] {fmt(response.segments[bb].text)}")
-        print(
             f"  TEXT  hit={th!s:5} score@target={t[target]:.4f}  top1=seg{bt}[{t[bt]:.4f}] {fmt(response.segments[bt].text)}")
 
     print(f"\n{'=' * 80}")
     print(f"TOP-1 ACCURACY over {total} scored questions  ->  "
           f"PEAK: {peak_hits}/{total} ({peak_hits / total:.0%}) | "
-          f"BOUND: {bound_hits}/{total} ({bound_hits / total:.0%}) | "
           f"TEXT: {text_hits}/{total} ({text_hits / total:.0%})")
     print(f"{'=' * 80}\n")
 

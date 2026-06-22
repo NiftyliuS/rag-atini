@@ -7,17 +7,30 @@ from dataclasses import dataclass
 from typing import List, Tuple, Optional
 from scipy.ndimage import gaussian_filter1d
 from scipy.signal import find_peaks
+from transformers import AutoTokenizer, AutoModelForTokenClassification, pipeline
+
+chonky_tokenizer = AutoTokenizer.from_pretrained("mirth/chonky_modernbert_base_1", model_max_length=1024)
+chonky_model = AutoModelForTokenClassification.from_pretrained(
+    "mirth/chonky_modernbert_base_1", num_labels=2, id2label={0: "O", 1: "separator"}, label2id={"O": 0, "separator": 1}
+)
+chonky_model.eval()
+chonky = pipeline(
+    "ner", model=chonky_model, tokenizer=chonky_tokenizer, aggregation_strategy="simple", device=-1, batch_size=8
+)
 
 
-def find_boundaries(text: str) -> List[int]:
-    boundaries = [m.start() for m in re.finditer(r'(?<=[.!?])\s+', text)]
-    return boundaries
+def find_boundaries(texts):
+    if isinstance(texts, str):
+        texts = [texts]
+    results = chonky(texts)  # one batched call; list-per-input
+    if texts and isinstance(results[0], dict):  # single input -> pipeline returns a flat list
+        results = [results]
+    return [[e["end"] for e in r] for r in results]
 
 
 @dataclass
 class RagSegment:
     vector: torch.Tensor
-    bound_vector: torch.Tensor
     text: Optional[str] = None
     text_coords: Optional[Tuple[int, int]] = None
 
@@ -207,8 +220,15 @@ class RagAtini:
         return peaks
 
     def snap_to_boundary(self, boundaries, text, segment_start, segment_end, overlap: int = 0):
-        b_start = bisect.bisect_right(boundaries, segment_start) - 1
-        b_end = bisect.bisect_left(boundaries, segment_end)
+        def nearest(pos):
+            i = bisect.bisect_left(boundaries, pos)
+            cands = []
+            if i < len(boundaries): cands.append(i)
+            if i > 0: cands.append(i - 1)
+            return min(cands, key=lambda j: abs(boundaries[j] - pos))
+
+        b_start = nearest(segment_start)
+        b_end = nearest(segment_end)
 
         b_start = max(0, b_start - overlap)
         b_end = min(len(boundaries) - 1, b_end + overlap)
@@ -216,7 +236,29 @@ class RagAtini:
         first_char = boundaries[b_start]
         last_char = boundaries[b_end]
 
-        return first_char, last_char, text[first_char:last_char + 1]
+        return first_char, last_char, text[first_char:last_char]
+
+    def peak_adjacent_boundaries(self, peak_chars, recoded_text, radius=512):
+        peak_chars = sorted(int(c) for c in peak_chars)
+        n = len(recoded_text)
+
+        text_segments = []
+        segment_offsets = []
+        for i, peak in enumerate(peak_chars):
+            left = peak_chars[i - 1] if i > 0 else 0
+            right = peak_chars[i + 1] if i + 1 < len(peak_chars) else n
+            from_char = max(peak - radius, left)
+            to_char = min(peak + radius, right)
+            text_segments.append(recoded_text[from_char:to_char])
+            segment_offsets.append(from_char)
+
+        boundaries = self.find_boundaries(text_segments)
+
+        refined = []
+        for seps, base in zip(boundaries, segment_offsets):
+            refined.extend(base + s for s in seps)
+
+        return sorted(set(refined))
 
     def vectorize(self,
                   document: str,
@@ -235,6 +277,7 @@ class RagAtini:
         if tokens_len == 0:
             raise ValueError("Input document resulted in zero tokens. Cannot process empty documents.")
 
+        token_to_char, char_to_token, recoded_text = self.get_token_offsets(tokens)
         chunks = self.chunk_tokens(tokens, stride)
         chunk_vectors = self.process_chunks(chunks, internal_batch)
 
@@ -246,9 +289,10 @@ class RagAtini:
         smoothed_vectors = self.apply_gaussian(meshed_vectors, sigma)
         semantic_velocity = self.calculate_velocity(smoothed_vectors)
         semantic_peaks = self.detect_peaks(semantic_velocity, sigma, prominence)
+        semantic_peak_chars = [token_to_char[p] for p in semantic_peaks]
 
-        token_to_char, char_to_token, recoded_text = self.get_token_offsets(tokens)
-        boundaries = sorted([0] + self.find_boundaries(recoded_text) + [len(recoded_text) - 1])
+        boundaries = sorted(
+            [0] + self.peak_adjacent_boundaries(semantic_peak_chars, recoded_text) + [len(recoded_text)])
 
         segments = []
         offset = 0
@@ -259,8 +303,7 @@ class RagAtini:
 
             segments.append(RagSegment(
                 vector=meshed_vectors[offset:peak].mean(dim=0),
-                bound_vector=meshed_vectors[char_to_token[first_char]:char_to_token[last_char] + 1].mean(dim=0),
-                text=segment_text.strip(),
+                text=segment_text, #.strip(),
                 text_coords=(first_char, last_char)
             ))
             offset = peak
