@@ -19,13 +19,13 @@ chonky = pipeline(
 )
 
 
-def find_boundaries(texts):
+def find_boundaries(texts, min_score=0.6):
     if isinstance(texts, str):
         texts = [texts]
     results = chonky(texts)  # one batched call; list-per-input
     if texts and isinstance(results[0], dict):  # single input -> pipeline returns a flat list
         results = [results]
-    return [[e["end"] for e in r] for r in results]
+    return [[e["end"] for e in r if e["score"] > min_score] for r in results]
 
 
 @dataclass
