@@ -71,21 +71,22 @@ class RagAtini:
             self.model.eval()
 
     def tokenize(self, text: str):
-        return self.tokenizer(text, add_special_tokens=False, return_tensors="pt")["input_ids"].to(self.device)
+        enc = self.tokenizer(text, add_special_tokens=False, return_tensors="pt",
+                             return_offsets_mapping=True)
+        tokens = enc["input_ids"].to(self.device)
+        offsets = enc["offset_mapping"][0].tolist()
+        return tokens, offsets
 
-    def get_token_offsets(self, tokens: torch.Tensor):
-        text = self.tokenizer.decode(tokens[0:1], skip_special_tokens=True)
-        token_to_char = [0]
-        char_to_token = [0] * len(text)
+    def get_token_offsets(self, document: str, offsets):
+        token_to_char = [s for s, _ in offsets]
+        token_to_char.append(len(document))  # sentinel end so token_to_char[last_token] is valid
 
-        for i in range(0, len(tokens) - 1):
-            token_to_char.append(len(text))
-            pair = self.tokenizer.decode([tokens[i:i + 1], tokens[i:i + 2]], skip_special_tokens=True)
-            next_token = pair[1][len(pair[0]):]
-            char_to_token.extend([i + 1] * len(next_token))
-            text += next_token
+        char_to_token = [0] * len(document)
+        for i, (s, e) in enumerate(offsets):
+            for c in range(s, e):
+                char_to_token[c] = i
 
-        return token_to_char, char_to_token, text
+        return token_to_char, char_to_token, document
 
     def chunk_tokens(self, tokens, stride):
         window_size = self.max_context_window - self.prefix_len - 2
@@ -264,20 +265,21 @@ class RagAtini:
                   document: str,
                   internal_batch: int = 1,
                   stride: int = None,
-                  sigma: int = None,
+                  f_sig: float = 1.0,
                   prominence: float = 4.0,
                   overlap: int = 0
                   ):
         stride = stride if stride else self.default_stride
-        sigma = sigma if sigma else self.sigma
+        sigma = self.sigma * f_sig
 
-        tokens = self.tokenize(document).squeeze(0)
+        tokens, offsets = self.tokenize(document)
+        tokens = tokens.squeeze(0)
         tokens_len = tokens.size(0)
 
         if tokens_len == 0:
             raise ValueError("Input document resulted in zero tokens. Cannot process empty documents.")
 
-        token_to_char, char_to_token, recoded_text = self.get_token_offsets(tokens)
+        token_to_char, char_to_token, recoded_text = self.get_token_offsets(document, offsets)
         chunks = self.chunk_tokens(tokens, stride)
         chunk_vectors = self.process_chunks(chunks, internal_batch)
 
@@ -303,7 +305,7 @@ class RagAtini:
 
             segments.append(RagSegment(
                 vector=meshed_vectors[offset:peak].mean(dim=0),
-                text=segment_text, #.strip(),
+                text=segment_text,  # .strip(),
                 text_coords=(first_char, last_char)
             ))
             offset = peak
