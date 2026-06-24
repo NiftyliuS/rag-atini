@@ -269,7 +269,7 @@ class RagAtini:
                   overlap: int = 0
                   ):
         stride = stride if stride else self.default_stride
-        sigma = self.sigma * f_sig
+        sigma = int(self.sigma * f_sig)
 
         tokens, offsets = self.tokenize(document)
         tokens = tokens.squeeze(0)
