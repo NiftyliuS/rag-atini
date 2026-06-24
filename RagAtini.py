@@ -86,7 +86,7 @@ class RagAtini:
             for c in range(s, e):
                 char_to_token[c] = i
 
-        return token_to_char, char_to_token, document
+        return token_to_char, char_to_token
 
     def chunk_tokens(self, tokens, stride):
         window_size = self.max_context_window - self.prefix_len - 2
