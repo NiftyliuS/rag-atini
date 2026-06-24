@@ -38,8 +38,9 @@ class RagAtiniChunker(BaseChunker):
         global call_count
         call_count += 1
         print(f"{call_count}")
-        resp = ragAtini.vectorize(text, prominence=0.01, overlap=0, f_sig=0.25)
-        return [s.text for s in resp.segments]
+        resp = ragAtini.vectorize(text, prominence=0.01, f_sig=0.5)
+        chunks = [s.text for s in resp.segments]
+        return chunks
 
 
 class ModernBertEF(EmbeddingFunction):
