@@ -39,7 +39,7 @@ class RagAtiniChunker(BaseChunker):
         call_count += 1
         print(f"{call_count}")
         resp = ragAtini.vectorize(text, prominence=0.01, overlap=0, f_sig=0.25)
-        return [s.text for s in resp.segments if s.text.strip()]
+        return [s.text for s in resp.segments]
 
 
 class ModernBertEF(EmbeddingFunction):
