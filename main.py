@@ -7,7 +7,6 @@ from RagAtini import RagAtini
 
 DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
 
-model_name = "BAAI/bge-m3"
 model_name = "nomic-ai/modernbert-embed-base"
 tokenizer = AutoTokenizer.from_pretrained(model_name)
 model = AutoModel.from_pretrained(model_name).to(DEVICE)
