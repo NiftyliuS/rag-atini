@@ -220,16 +220,16 @@ class RagAtini:
 
         return peaks
 
-    def snap_to_boundary(self, boundaries, text, segment_start, segment_end, overlap: int = 0):
-        def nearest(pos):
-            i = bisect.bisect_left(boundaries, pos)
-            cands = []
-            if i < len(boundaries): cands.append(i)
-            if i > 0: cands.append(i - 1)
-            return min(cands, key=lambda j: abs(boundaries[j] - pos))
+    def find_nearest_boundary(self, boundaries, pos):
+        i = bisect.bisect_left(boundaries, pos)
+        cands = []
+        if i < len(boundaries): cands.append(i)
+        if i > 0: cands.append(i - 1)
+        return min(cands, key=lambda j: abs(boundaries[j] - pos))
 
-        b_start = nearest(segment_start)
-        b_end = nearest(segment_end)
+    def snap_to_boundary(self, boundaries, text, segment_start, segment_end, overlap: int = 0):
+        b_start = self.find_nearest_boundary(boundaries, segment_start)
+        b_end = self.find_nearest_boundary(boundaries, segment_end)
 
         b_start = max(0, b_start - overlap)
         b_end = min(len(boundaries) - 1, b_end + overlap)
