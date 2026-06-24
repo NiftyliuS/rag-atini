@@ -96,8 +96,8 @@ def evaluate_retrieval(response, questions, tokenizer, model, device):
 
     def get_scores(query: str):
         q = F.normalize(embed_query("search_query: " + query, tokenizer, model, device), p=2, dim=0).unsqueeze(0)
-        return (F.cosine_similarity(q, p_vecs).cpu().numpy(),
-                F.cosine_similarity(q, t_vecs).cpu().numpy())
+        return (F.cosine_similarity(q, p_vecs).float().cpu().numpy(),
+                F.cosine_similarity(q, t_vecs).float().cpu().numpy())
 
     def fmt(t):
         c = str(t).replace('\n', ' ').strip()
@@ -150,7 +150,7 @@ if __name__ == "__main__":
 
         tokens_len = len(response.token_ids)
         if tokens_len > 0:
-            vel_forward = response.velocity.cpu().numpy()
+            vel_forward = response.velocity.float().cpu().numpy()
             valid_peaks = response.peaks[response.peaks < tokens_len]
 
             plt.figure(figsize=(16, 7))

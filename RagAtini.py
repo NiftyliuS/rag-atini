@@ -208,7 +208,7 @@ class RagAtini:
 
     def detect_peaks(self, semantic_velocity, distance: int, prominence: float = 4.0):
         if isinstance(semantic_velocity, torch.Tensor):
-            vel_np = semantic_velocity.cpu().numpy()
+            vel_np = semantic_velocity.float().cpu().numpy()
         else:
             vel_np = semantic_velocity
 
