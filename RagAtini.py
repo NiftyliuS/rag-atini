@@ -41,7 +41,7 @@ class RagAtiniResponse:
     peaks: np.ndarray
     token_ids: torch.Tensor
     token_vectors: torch.Tensor
-    recoded_text: str
+    document: str
     segments: List[RagSegment]
 
 
@@ -240,7 +240,6 @@ class RagAtini:
         return first_char, last_char, text[first_char:last_char]
 
     def peak_adjacent_boundaries(self, peak_chars, recoded_text, radius=512):
-        peak_chars = sorted(int(c) for c in peak_chars)
         n = len(recoded_text)
 
         text_segments = []
@@ -253,13 +252,13 @@ class RagAtini:
             text_segments.append(recoded_text[from_char:to_char])
             segment_offsets.append(from_char)
 
-        boundaries = self.find_boundaries(text_segments)
+        segments_boundaries = self.find_boundaries(text_segments)
 
         refined = []
-        for seps, base in zip(boundaries, segment_offsets):
+        for seps, base in zip(segments_boundaries, segment_offsets):
             refined.extend(base + s for s in seps)
 
-        return sorted(set(refined))
+        return sorted(set([0] + refined + [len(recoded_text)]))
 
     def vectorize(self,
                   document: str,
@@ -279,7 +278,7 @@ class RagAtini:
         if tokens_len == 0:
             raise ValueError("Input document resulted in zero tokens. Cannot process empty documents.")
 
-        token_to_char, char_to_token, recoded_text = self.get_token_offsets(document, offsets)
+        token_to_char, char_to_token = self.get_token_offsets(document, offsets)
         chunks = self.chunk_tokens(tokens, stride)
         chunk_vectors = self.process_chunks(chunks, internal_batch)
 
@@ -292,20 +291,18 @@ class RagAtini:
         semantic_velocity = self.calculate_velocity(smoothed_vectors)
         semantic_peaks = self.detect_peaks(semantic_velocity, sigma, prominence)
         semantic_peak_chars = [token_to_char[p] for p in semantic_peaks]
-
-        boundaries = sorted(
-            [0] + self.peak_adjacent_boundaries(semantic_peak_chars, recoded_text) + [len(recoded_text)])
+        boundaries = self.peak_adjacent_boundaries(semantic_peak_chars, document)
 
         segments = []
         offset = 0
         for peak in np.append(semantic_peaks, len(tokens) - 1):
             first_char, last_char, segment_text = self.snap_to_boundary(
-                boundaries, recoded_text, token_to_char[offset], token_to_char[peak], overlap
+                boundaries, document, token_to_char[offset], token_to_char[peak], overlap
             )
 
             segments.append(RagSegment(
                 vector=meshed_vectors[offset:peak].mean(dim=0),
-                text=segment_text,  # .strip(),
+                text=segment_text.strip(),
                 text_coords=(first_char, last_char)
             ))
             offset = peak
@@ -315,6 +312,6 @@ class RagAtini:
             peaks=semantic_peaks,
             token_ids=tokens,
             token_vectors=meshed_vectors,
-            recoded_text=recoded_text,
+            document=document,
             segments=segments
         )
