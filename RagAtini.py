@@ -79,7 +79,7 @@ class RagAtini:
 
     def get_token_offsets(self, document: str, offsets):
         token_to_char = [s for s, _ in offsets]
-        token_to_char.append(len(document))  # sentinel end so token_to_char[last_token] is valid
+        token_to_char.append(len(document))
 
         char_to_token = [0] * len(document)
         for i, (s, e) in enumerate(offsets):
