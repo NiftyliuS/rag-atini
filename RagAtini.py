@@ -295,6 +295,7 @@ class RagAtini:
 
         segments = []
         offset = 0
+        buffer = ''
         for peak in np.append(semantic_peaks, len(tokens) - 1):
             first_char, last_char, segment_text = self.snap_to_boundary(
                 boundaries, document, token_to_char[offset], token_to_char[peak], overlap
@@ -302,9 +303,12 @@ class RagAtini:
             if segment_text.strip() != "":
                 segments.append(RagSegment(
                     vector=meshed_vectors[offset:peak].mean(dim=0),
-                    text=segment_text.strip(),
+                    text=buffer+segment_text, # .strip(),
                     text_coords=(first_char, last_char)
                 ))
+                buffer=''
+            else:
+                buffer += segment_text
             offset = peak
 
         return RagAtiniResponse(
