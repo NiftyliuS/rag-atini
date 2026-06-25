@@ -259,7 +259,7 @@ class RagAtini:
 
         return [pos for pos, _ in merged]
 
-    def peak_adjacent_boundaries(self, peak_chars, recoded_text, radius=512, min_distance=10):
+    def peak_adjacent_boundaries(self, peak_chars, recoded_text, radius=512, min_distance=16):
         doc_len = len(recoded_text)
 
         text_segments = []
@@ -280,9 +280,10 @@ class RagAtini:
                   internal_batch: int = 1,
                   stride: int = None,
                   f_sig: float = 1.0,
-                  prominence: float = 4.0,
+                  prominence: float = 0.5,
                   overlap: int = 0,
-                  min_chunk_size: int = 100
+                  min_chunk_size: int = 100,
+                  min_boundary_distance: int = 16
                   ):
         stride = stride if stride else self.default_stride
         sigma = int(self.sigma * f_sig)
@@ -308,7 +309,7 @@ class RagAtini:
 
         all_semantic_peaks = self.detect_peaks(semantic_velocity, sigma, 0)
         semantic_peak_chars = [token_to_char[p] for p in all_semantic_peaks]
-        boundaries = self.peak_adjacent_boundaries(semantic_peak_chars, document)
+        boundaries = self.peak_adjacent_boundaries(semantic_peak_chars, document, min_boundary_distance)
 
         semantic_peaks = self.detect_peaks(semantic_velocity, sigma, prominence)
         segments = []
