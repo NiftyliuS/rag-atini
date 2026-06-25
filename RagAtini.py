@@ -264,7 +264,8 @@ class RagAtini:
                   stride: int = None,
                   f_sig: float = 1.0,
                   prominence: float = 4.0,
-                  overlap: int = 0
+                  overlap: int = 0,
+                  min_chunk_size: int = 100
                   ):
         stride = stride if stride else self.default_stride
         sigma = int(self.sigma * f_sig)
@@ -299,6 +300,8 @@ class RagAtini:
             first_char, last_char, segment_text = self.snap_to_boundary(
                 boundaries, document, token_to_char[offset], token_to_char[peak], overlap
             )
+            if len(segment_text) < min_chunk_size:
+                continue
             if segment_text != "":
                 segments.append(RagSegment(
                     vector=meshed_vectors[offset:peak].mean(dim=0),
