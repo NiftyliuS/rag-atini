@@ -37,9 +37,10 @@ class RagAtiniChunker(BaseChunker):
     def split_text(self, text):
         global call_count
         call_count += 1
-        print(f"{call_count}")
-        resp = ragAtini.vectorize(text, prominence=0.01, f_sig=0.5)
+        resp = ragAtini.vectorize(text, prominence=0.5, f_sig=1)
         chunks = [s.text for s in resp.segments]
+        sizes = [len(c) for c in chunks]
+        print(f"{call_count} | chunks={len(chunks)} mean_chars={sum(sizes) / len(sizes):.0f}")
         return chunks
 
 
