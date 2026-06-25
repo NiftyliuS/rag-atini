@@ -19,7 +19,7 @@ chonky = pipeline(
 )
 
 
-def find_boundaries(texts, min_score=0.6):
+def find_boundaries(texts, min_score=0.5):
     if isinstance(texts, str):
         texts = [texts]
     results = chonky(texts)  # one batched call; list-per-input
@@ -240,15 +240,13 @@ class RagAtini:
         return first_char, last_char, text[first_char:last_char]
 
     def peak_adjacent_boundaries(self, peak_chars, recoded_text, radius=512):
-        n = len(recoded_text)
+        doc_len = len(recoded_text)
 
         text_segments = []
         segment_offsets = []
         for i, peak in enumerate(peak_chars):
-            left = peak_chars[i - 1] if i > 0 else 0
-            right = peak_chars[i + 1] if i + 1 < len(peak_chars) else n
-            from_char = max(peak - radius, left)
-            to_char = min(peak + radius, right)
+            from_char = max(peak - radius, 0)
+            to_char = min(peak + radius, doc_len)
             text_segments.append(recoded_text[from_char:to_char])
             segment_offsets.append(from_char)
 
@@ -258,7 +256,7 @@ class RagAtini:
         for seps, base in zip(segments_boundaries, segment_offsets):
             refined.extend(base + s for s in seps)
 
-        return sorted(set([0] + refined + [len(recoded_text)]))
+        return sorted(set([0] + refined + [doc_len]))
 
     def vectorize(self,
                   document: str,
@@ -289,10 +287,12 @@ class RagAtini:
         meshed_vectors = self.mesh_vectors(chunk_vectors, chunk_masks, tokens_len, stride)
         smoothed_vectors = self.apply_gaussian(meshed_vectors, sigma)
         semantic_velocity = self.calculate_velocity(smoothed_vectors)
-        semantic_peaks = self.detect_peaks(semantic_velocity, sigma, prominence)
-        semantic_peak_chars = [token_to_char[p] for p in semantic_peaks]
+
+        all_semantic_peaks = self.detect_peaks(semantic_velocity, sigma, 0)
+        semantic_peak_chars = [token_to_char[p] for p in all_semantic_peaks]
         boundaries = self.peak_adjacent_boundaries(semantic_peak_chars, document)
 
+        semantic_peaks = self.detect_peaks(semantic_velocity, sigma, prominence)
         segments = []
         offset = 0
         for peak in np.append(semantic_peaks, len(tokens) - 1):
@@ -302,7 +302,7 @@ class RagAtini:
             if segment_text != "":
                 segments.append(RagSegment(
                     vector=meshed_vectors[offset:peak].mean(dim=0),
-                    text=segment_text,  # .strip(),
+                    text=segment_text,
                     text_coords=(first_char, last_char)
                 ))
 
