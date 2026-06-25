@@ -145,7 +145,7 @@ if __name__ == "__main__":
 
     if context:
         print(f"Context character length: {len(context)}")
-        response = ragAtini.vectorize(context, prominence=0.5, overlap=0)
+        response = ragAtini.vectorize(context, prominence=0.5, overlap=False)
 
         tokens_len = len(response.token_ids)
         if tokens_len > 0:

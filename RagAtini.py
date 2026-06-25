@@ -227,12 +227,18 @@ class RagAtini:
         if i > 0: cands.append(i - 1)
         return min(cands, key=lambda j: abs(boundaries[j] - pos))
 
-    def snap_to_boundary(self, boundaries, text, segment_start, segment_end, overlap: int = 0):
+    def snap_to_boundary(self, boundaries: List[int], text: str, segment_start: int, segment_end: int, overlap: bool):
         b_start = self.find_nearest_boundary(boundaries, segment_start)
         b_end = self.find_nearest_boundary(boundaries, segment_end)
 
-        b_start = max(0, b_start - overlap)
-        b_end = min(len(boundaries) - 1, b_end + overlap)
+        b_start = max(0, b_start)
+        b_end = min(len(boundaries) - 1, b_end)
+
+        if overlap:
+            if boundaries[b_start] >= segment_start:
+                b_start = max(0, b_start - 1)
+            if boundaries[b_end] <= segment_end:
+                b_end = min(len(boundaries) - 1, b_end + 1)
 
         first_char = boundaries[b_start]
         last_char = boundaries[b_end]
@@ -281,7 +287,7 @@ class RagAtini:
                   stride: int = None,
                   f_sig: float = 1.0,
                   prominence: float = 0.5,
-                  overlap: int = 0,
+                  overlap: bool = False,
                   min_chunk_size: int = 100,
                   min_boundary_distance: int = 16,
                   boundary_radius: int = 512
