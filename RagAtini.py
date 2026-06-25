@@ -25,7 +25,7 @@ def find_boundaries(texts, min_score=0.5):
     results = chonky(texts)  # one batched call; list-per-input
     if texts and isinstance(results[0], dict):  # single input -> pipeline returns a flat list
         results = [results]
-    return [[e["end"] for e in r if e["score"] > min_score] for r in results]
+    return [[(e["end"], e["score"]) for e in r if e["score"] > min_score] for r in results]
 
 
 @dataclass
@@ -239,7 +239,27 @@ class RagAtini:
 
         return first_char, last_char, text[first_char:last_char]
 
-    def peak_adjacent_boundaries(self, peak_chars, recoded_text, radius=512):
+    def merge_segment_boundaries(self, segments_boundaries, segment_offsets, min_distance=10):
+        refined = []
+        for seps, base in zip(segments_boundaries, segment_offsets):
+            refined.extend((base + char, conf) for char, conf in seps)
+
+        refined = sorted(set(refined))
+
+        deduped = {}
+        for char, conf in refined:
+            deduped[char] = conf
+
+        merged = []
+        for pos, conf in deduped.items():
+            if merged and pos - merged[-1][0] < min_distance:
+                merged[-1] = max(merged[-1], (pos, conf), key=lambda b: b[1])
+            else:
+                merged.append((pos, conf))
+
+        return [pos for pos, _ in merged]
+
+    def peak_adjacent_boundaries(self, peak_chars, recoded_text, radius=512, min_distance=10):
         doc_len = len(recoded_text)
 
         text_segments = []
@@ -251,12 +271,9 @@ class RagAtini:
             segment_offsets.append(from_char)
 
         segments_boundaries = self.find_boundaries(text_segments)
+        merged_boundaries = self.merge_segment_boundaries(segments_boundaries, segment_offsets, min_distance)
 
-        refined = []
-        for seps, base in zip(segments_boundaries, segment_offsets):
-            refined.extend(base + s for s in seps)
-
-        return sorted(set([0] + refined + [doc_len]))
+        return sorted([0] + merged_boundaries + [doc_len])
 
     def vectorize(self,
                   document: str,
