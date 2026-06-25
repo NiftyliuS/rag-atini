@@ -283,7 +283,8 @@ class RagAtini:
                   prominence: float = 0.5,
                   overlap: int = 0,
                   min_chunk_size: int = 100,
-                  min_boundary_distance: int = 16
+                  min_boundary_distance: int = 16,
+                  boundary_radius: int = 512
                   ):
         stride = stride if stride else self.default_stride
         sigma = int(self.sigma * f_sig)
@@ -309,7 +310,8 @@ class RagAtini:
 
         all_semantic_peaks = self.detect_peaks(semantic_velocity, sigma, 0)
         semantic_peak_chars = [token_to_char[p] for p in all_semantic_peaks]
-        boundaries = self.peak_adjacent_boundaries(semantic_peak_chars, document, min_boundary_distance)
+        boundaries = self.peak_adjacent_boundaries(
+            semantic_peak_chars, document, boundary_radius, min_boundary_distance)
 
         semantic_peaks = self.detect_peaks(semantic_velocity, sigma, prominence)
         segments = []
