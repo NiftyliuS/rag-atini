@@ -147,9 +147,9 @@ if __name__ == "__main__":
         print(f"Context character length: {len(context)}")
         response = ragAtini.vectorize(context, prominence=0.5, overlap=False)
 
-        tokens_len = len(response.token_ids)
+        tokens_len = len(response._velocity)
         if tokens_len > 0:
-            vel_forward = response.velocity.float().cpu().numpy()
+            vel_forward = response._velocity.float().cpu().numpy()
             valid_peaks = response.peaks[response.peaks < tokens_len]
 
             plt.figure(figsize=(16, 7))

@@ -34,10 +34,20 @@ call_count = 0
 
 
 class RagAtiniChunker(BaseChunker):
+    def __init__(self, prominence: float, f_sig: float, overlap: bool):
+        self.prominence = prominence
+        self.f_sig = f_sig
+        self.overlap = overlap
+
     def split_text(self, text):
         global call_count
         call_count += 1
-        resp = ragAtini.vectorize(text, prominence=0.5, f_sig=1)
+        resp = ragAtini.vectorize(
+            text,
+            prominence=self.prominence,
+            f_sig=self.f_sig,
+            overlap=self.overlap
+        )
         chunks = [s.text for s in resp.segments]
         sizes = [len(c) for c in chunks]
         print(f"{call_count} | chunks={len(chunks)} mean_chars={sum(sizes) / len(sizes):.0f}")
@@ -72,5 +82,6 @@ default_ef = embedding_functions.OpenAIEmbeddingFunction(
     model_name="text-embedding-3-large"
 )
 
-results = GeneralEvaluation().run(RagAtiniChunker(), default_ef)
+# results = GeneralEvaluation().run(RagAtiniChunker(), default_ef, retrieve=-1)
+results = GeneralEvaluation().run(RagAtiniChunker(prominence=0.1, f_sig=0.25, overlap=False), default_ef)
 print(results)

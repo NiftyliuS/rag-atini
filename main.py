@@ -25,4 +25,4 @@ if __name__ == "__main__":
     ragAtini = RagAtini(model, tokenizer)
 
     print(f"Context character length: {len(context)}")
-    response = ragAtini.vectorize(context, prominence=0.5, overlap=0)
+    response = ragAtini.vectorize(context, prominence=0.5,f_sig=0.5, overlap=False)

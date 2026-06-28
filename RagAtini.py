@@ -19,6 +19,21 @@ chonky = pipeline(
 )
 
 
+def detect_peaks(semantic_velocity, distance: int, prominence: float = 4.0):
+    if isinstance(semantic_velocity, torch.Tensor):
+        vel_np = semantic_velocity.float().cpu().numpy()
+    else:
+        vel_np = semantic_velocity
+
+    median_vel = np.median(vel_np)
+    mad = max(1e-6, np.median(np.abs(vel_np - median_vel)))
+    min_prominence = mad * prominence
+
+    peaks, _ = find_peaks(vel_np, distance=distance, prominence=min_prominence)
+
+    return peaks
+
+
 def find_boundaries(texts, min_score=0.5):
     if isinstance(texts, str):
         texts = [texts]
@@ -28,21 +43,69 @@ def find_boundaries(texts, min_score=0.5):
     return [[(e["end"], e["score"]) for e in r if e["score"] > min_score] for r in results]
 
 
+def find_nearest_boundary(boundaries, pos):
+    i = bisect.bisect_left(boundaries, pos)
+    cands = []
+    if i < len(boundaries): cands.append(i)
+    if i > 0: cands.append(i - 1)
+    return min(cands, key=lambda j: abs(boundaries[j] - pos))
+
+
+def snap_to_boundary(boundaries: List[int], text: str, segment_start: int, segment_end: int, overlap: bool):
+    b_start = find_nearest_boundary(boundaries, segment_start)
+    b_end = find_nearest_boundary(boundaries, segment_end)
+
+    b_start = max(0, b_start)
+    b_end = min(len(boundaries) - 1, b_end)
+
+    if overlap:
+        if boundaries[b_start] >= segment_start:
+            b_start = max(0, b_start - 1)
+        if boundaries[b_end] <= segment_end:
+            b_end = min(len(boundaries) - 1, b_end + 1)
+
+    first_char = boundaries[b_start]
+    last_char = boundaries[b_end]
+
+    return first_char, last_char, text[first_char:last_char]
+
+
 @dataclass
 class RagSegment:
     vector: torch.Tensor
     text: Optional[str] = None
     text_coords: Optional[Tuple[int, int]] = None
 
+@dataclass
+class RagAtiniVectorize:
+    vector: torch.Tensor
+    text: Optional[str] = None
+    text_coords: Optional[Tuple[int, int]] = None
 
 @dataclass
 class RagAtiniResponse:
-    velocity: torch.Tensor
-    peaks: np.ndarray
-    token_ids: torch.Tensor
-    token_vectors: torch.Tensor
-    document: str
-    segments: List[RagSegment]
+    def __init__(self,
+                 sigma: int,
+                 prominence: float,
+                 boundaries: List[int],
+                 overlap: bool,
+                 token_to_char: List[int],
+                 velocity: torch.Tensor,
+                 peaks: np.ndarray,
+                 document: str,
+                 segments: List[RagSegment]):
+        self._sigma = sigma
+        self._velocity = velocity
+        self._boundaries = boundaries
+
+        self.prominence = prominence
+        self.peaks = peaks
+        self.document = document
+        self.segments = segments
+        self.overlap = overlap
+
+    def to(self, prominence: float, overlap: bool = None):
+        return self
 
 
 class RagAtini:
@@ -206,45 +269,6 @@ class RagAtini:
         weight_vec[weight_vec == 0] = 1.0
         return sum_vec / weight_vec
 
-    def detect_peaks(self, semantic_velocity, distance: int, prominence: float = 4.0):
-        if isinstance(semantic_velocity, torch.Tensor):
-            vel_np = semantic_velocity.float().cpu().numpy()
-        else:
-            vel_np = semantic_velocity
-
-        median_vel = np.median(vel_np)
-        mad = max(1e-6, np.median(np.abs(vel_np - median_vel)))
-        min_prominence = mad * prominence
-
-        peaks, _ = find_peaks(vel_np, distance=distance, prominence=min_prominence)
-
-        return peaks
-
-    def find_nearest_boundary(self, boundaries, pos):
-        i = bisect.bisect_left(boundaries, pos)
-        cands = []
-        if i < len(boundaries): cands.append(i)
-        if i > 0: cands.append(i - 1)
-        return min(cands, key=lambda j: abs(boundaries[j] - pos))
-
-    def snap_to_boundary(self, boundaries: List[int], text: str, segment_start: int, segment_end: int, overlap: bool):
-        b_start = self.find_nearest_boundary(boundaries, segment_start)
-        b_end = self.find_nearest_boundary(boundaries, segment_end)
-
-        b_start = max(0, b_start)
-        b_end = min(len(boundaries) - 1, b_end)
-
-        if overlap:
-            if boundaries[b_start] >= segment_start:
-                b_start = max(0, b_start - 1)
-            if boundaries[b_end] <= segment_end:
-                b_end = min(len(boundaries) - 1, b_end + 1)
-
-        first_char = boundaries[b_start]
-        last_char = boundaries[b_end]
-
-        return first_char, last_char, text[first_char:last_char]
-
     def merge_segment_boundaries(self, segments_boundaries, segment_offsets, min_distance=10):
         refined = []
         for seps, base in zip(segments_boundaries, segment_offsets):
@@ -314,16 +338,16 @@ class RagAtini:
         smoothed_vectors = self.apply_gaussian(meshed_vectors, sigma)
         semantic_velocity = self.calculate_velocity(smoothed_vectors)
 
-        all_semantic_peaks = self.detect_peaks(semantic_velocity, sigma, 0)
+        all_semantic_peaks = detect_peaks(semantic_velocity, sigma, 0)
         semantic_peak_chars = [token_to_char[p] for p in all_semantic_peaks]
         boundaries = self.peak_adjacent_boundaries(
             semantic_peak_chars, document, boundary_radius, min_boundary_distance)
 
-        semantic_peaks = self.detect_peaks(semantic_velocity, sigma, prominence)
+        semantic_peaks = detect_peaks(semantic_velocity, sigma, prominence)
         segments = []
         offset = 0
         for peak in np.append(semantic_peaks, len(tokens) - 1):
-            first_char, last_char, segment_text = self.snap_to_boundary(
+            first_char, last_char, segment_text = snap_to_boundary(
                 boundaries, document, token_to_char[offset], token_to_char[peak], overlap
             )
             if len(segment_text) < min_chunk_size:
@@ -334,14 +358,18 @@ class RagAtini:
                     text=segment_text,
                     text_coords=(first_char, last_char)
                 ))
-
             offset = peak
 
         return RagAtiniResponse(
+            sigma=sigma,
+            prominence=prominence,
+            overlap=overlap,
+
+            boundaries=boundaries,
+            token_to_char=token_to_char,
             velocity=semantic_velocity,
             peaks=semantic_peaks,
-            token_ids=tokens,
-            token_vectors=meshed_vectors,
             document=document,
+
             segments=segments
         )
