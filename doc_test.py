@@ -63,17 +63,6 @@ def embed_query(query: str, tokenizer, model, device) -> torch.Tensor:
         return outputs.mean(dim=0)
 
 
-def compare(query: str, peak_vec: torch.Tensor, tokenizer, model, device):
-    q_vec = embed_query("search_query: " + query, tokenizer, model, device)
-
-    q_vec = F.normalize(q_vec, p=2, dim=0)
-    p_vec = F.normalize(peak_vec, p=2, dim=0)
-
-    p_score = F.cosine_similarity(q_vec.unsqueeze(0), p_vec.unsqueeze(0)).item()
-
-    return p_score
-
-
 def evaluate_retrieval(response, questions, tokenizer, model, device):
     if not response.segments:
         print("No segments generated. Aborting evaluation.")
@@ -86,45 +75,39 @@ def evaluate_retrieval(response, questions, tokenizer, model, device):
         preview = preview if len(preview) <= 120 else preview[:300] + "..."
         print(f"Segment {i:02d} | Coords: {seg.text_coords} | Text: {preview}")
 
-    p_vecs = F.normalize(torch.stack([s.vector for s in response.segments]), p=2, dim=1)
     t_vecs = F.normalize(torch.stack([
         embed_query("search_document: " + s.text, tokenizer, model, device) if s.text
-        else torch.zeros(p_vecs.size(1), device=device)
+        else torch.zeros(model.config.hidden_size, device=device)
         for s in response.segments
     ]), p=2, dim=1)
 
     def get_scores(query: str):
         q = F.normalize(embed_query("search_query: " + query, tokenizer, model, device), p=2, dim=0).unsqueeze(0)
-        return (F.cosine_similarity(q, p_vecs).float().cpu().numpy(),
-                F.cosine_similarity(q, t_vecs).float().cpu().numpy())
+        return F.cosine_similarity(q, t_vecs).float().cpu().numpy()
 
     def fmt(t):
         c = str(t).replace('\n', ' ').strip()
         return c if len(c) <= 100 else c[:97] + "..."
 
     print(f"\n{'=' * 80}\nTop-1 retrieval vs target segment\n{'=' * 80}")
-    peak_hits = text_hits = total = 0
+    text_hits = total = 0
 
     for question, target in questions:
         if target >= n_seg:  # target chunk doesn't exist in this run
             print(f"\nQ: {question}\n  SKIP (target seg {target} >= {n_seg} segments)")
             continue
         total += 1
-        p, t = get_scores(question)
-        bp, bt = int(np.argmax(p)), int(np.argmax(t))
-        ph, th = bp == target, bt == target
-        peak_hits += ph
+        t = get_scores(question)
+        bt = int(np.argmax(t))
+        th = bt == target
         text_hits += th
 
         print(f"\nQ: {question}\n  target=seg{target}")
-        print(
-            f"  PEAK  hit={ph!s:5} score@target={p[target]:.4f}  top1=seg{bp}[{p[bp]:.4f}] {fmt(response.segments[bp].text)}")
         print(
             f"  TEXT  hit={th!s:5} score@target={t[target]:.4f}  top1=seg{bt}[{t[bt]:.4f}] {fmt(response.segments[bt].text)}")
 
     print(f"\n{'=' * 80}")
     print(f"TOP-1 ACCURACY over {total} scored questions  ->  "
-          f"PEAK: {peak_hits}/{total} ({peak_hits / total:.0%}) | "
           f"TEXT: {text_hits}/{total} ({text_hits / total:.0%})")
     print(f"{'=' * 80}\n")
 
@@ -146,10 +129,10 @@ if __name__ == "__main__":
     if context:
         print(f"Context character length: {len(context)}")
         response = ragAtini.vectorize(context, prominence=0.5, overlap=False)
-
-        tokens_len = len(response._velocity)
+        velocity = response._request.velocity
+        tokens_len = len(velocity)
         if tokens_len > 0:
-            vel_forward = response._velocity.float().cpu().numpy()
+            vel_forward = velocity.float().cpu().numpy()
             valid_peaks = response.peaks[response.peaks < tokens_len]
 
             plt.figure(figsize=(16, 7))

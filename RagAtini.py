@@ -1,4 +1,3 @@
-import re
 import bisect
 import torch
 import numpy as np
@@ -51,12 +50,9 @@ def find_nearest_boundary(boundaries, pos):
     return min(cands, key=lambda j: abs(boundaries[j] - pos))
 
 
-def snap_to_boundary(boundaries: List[int], text: str, segment_start: int, segment_end: int, overlap: bool):
+def snap_to_boundary(boundaries: List[int], segment_start: int, segment_end: int, overlap: bool):
     b_start = find_nearest_boundary(boundaries, segment_start)
     b_end = find_nearest_boundary(boundaries, segment_end)
-
-    b_start = max(0, b_start)
-    b_end = min(len(boundaries) - 1, b_end)
 
     if overlap:
         if boundaries[b_start] >= segment_start:
@@ -67,45 +63,87 @@ def snap_to_boundary(boundaries: List[int], text: str, segment_start: int, segme
     first_char = boundaries[b_start]
     last_char = boundaries[b_end]
 
-    return first_char, last_char, text[first_char:last_char]
+    return first_char, last_char
 
 
 @dataclass
-class RagSegment:
-    vector: torch.Tensor
+class RagAtiniTextSegment:
     text: Optional[str] = None
     text_coords: Optional[Tuple[int, int]] = None
 
-@dataclass
-class RagAtiniVectorize:
-    vector: torch.Tensor
-    text: Optional[str] = None
-    text_coords: Optional[Tuple[int, int]] = None
 
 @dataclass
+class RagAtiniVectorizeRequest:
+    sigma: int
+    document: str
+    boundaries: List[int]
+    velocity: torch.Tensor
+    token_to_char: List[int]
+
+
 class RagAtiniResponse:
     def __init__(self,
-                 sigma: int,
+                 request: RagAtiniVectorizeRequest,
                  prominence: float,
-                 boundaries: List[int],
                  overlap: bool,
-                 token_to_char: List[int],
-                 velocity: torch.Tensor,
-                 peaks: np.ndarray,
-                 document: str,
-                 segments: List[RagSegment]):
-        self._sigma = sigma
-        self._velocity = velocity
-        self._boundaries = boundaries
+                 min_chunk_size: int
+                 ):
+        self._request = request
 
         self.prominence = prominence
-        self.peaks = peaks
-        self.document = document
-        self.segments = segments
         self.overlap = overlap
+        self.min_chunk_size = min_chunk_size
 
-    def to(self, prominence: float, overlap: bool = None):
-        return self
+        peaks, segments = self._build(prominence, overlap, min_chunk_size)
+        self.peaks = peaks
+        self.segments = segments
+
+    def _segment(self, first_char, last_char):
+        return RagAtiniTextSegment(
+            text=self._request.document[first_char:last_char],
+            text_coords=(first_char, last_char)
+        )
+
+    def _build(self, prominence: float, overlap: bool, min_chunk_size: int):
+        min_chunk_size = max(min_chunk_size, 1)
+        prominence = max(prominence, 0)
+
+        peaks = detect_peaks(self._request.velocity, self._request.sigma, prominence)
+        segments = []
+        offset = 0
+        last_peak = len(self._request.velocity) - 1
+        for peak in np.append(peaks, last_peak):
+            is_last_peak = peak == last_peak
+            first_char, last_char = snap_to_boundary(
+                boundaries=self._request.boundaries,
+                segment_start=self._request.token_to_char[offset],
+                segment_end=self._request.token_to_char[peak],
+                overlap=overlap
+            )
+
+            if last_char - first_char < min_chunk_size:
+                if is_last_peak and first_char != last_char:
+                    if segments:
+                        segments[-1] = self._segment(segments[-1].text_coords[0], last_char)
+                    else:
+                        segments.append(self._segment(first_char, last_char))
+            else:
+                segments.append(self._segment(first_char, last_char))
+                offset = peak
+
+        return peaks, segments
+
+    def to(self, prominence: float = None, overlap: bool = None, min_chunk_size: int = None):
+        prominence = self.prominence if prominence is None else prominence
+        overlap = self.overlap if overlap is None else overlap
+        min_chunk_size = self.min_chunk_size if min_chunk_size is None else min_chunk_size
+
+        return RagAtiniResponse(
+            request=self._request,
+            prominence=prominence,
+            overlap=overlap,
+            min_chunk_size=min_chunk_size
+        )
 
 
 class RagAtini:
@@ -143,13 +181,7 @@ class RagAtini:
     def get_token_offsets(self, document: str, offsets):
         token_to_char = [s for s, _ in offsets]
         token_to_char.append(len(document))
-
-        char_to_token = [0] * len(document)
-        for i, (s, e) in enumerate(offsets):
-            for c in range(s, e):
-                char_to_token[c] = i
-
-        return token_to_char, char_to_token
+        return token_to_char
 
     def chunk_tokens(self, tokens, stride):
         window_size = self.max_context_window - self.prefix_len - 2
@@ -294,7 +326,7 @@ class RagAtini:
 
         text_segments = []
         segment_offsets = []
-        for i, peak in enumerate(peak_chars):
+        for peak in peak_chars:
             from_char = max(peak - radius, 0)
             to_char = min(peak + radius, doc_len)
             text_segments.append(recoded_text[from_char:to_char])
@@ -326,7 +358,7 @@ class RagAtini:
         if tokens_len == 0:
             raise ValueError("Input document resulted in zero tokens. Cannot process empty documents.")
 
-        token_to_char, char_to_token = self.get_token_offsets(document, offsets)
+        token_to_char = self.get_token_offsets(document, offsets)
         chunks = self.chunk_tokens(tokens, stride)
         chunk_vectors = self.process_chunks(chunks, internal_batch)
 
@@ -339,37 +371,15 @@ class RagAtini:
         semantic_velocity = self.calculate_velocity(smoothed_vectors)
 
         all_semantic_peaks = detect_peaks(semantic_velocity, sigma, 0)
-        semantic_peak_chars = [token_to_char[p] for p in all_semantic_peaks]
-        boundaries = self.peak_adjacent_boundaries(
-            semantic_peak_chars, document, boundary_radius, min_boundary_distance)
+        all_peak_chars = [token_to_char[p] for p in all_semantic_peaks]
+        boundaries = self.peak_adjacent_boundaries(all_peak_chars, document, boundary_radius, min_boundary_distance)
 
-        semantic_peaks = detect_peaks(semantic_velocity, sigma, prominence)
-        segments = []
-        offset = 0
-        for peak in np.append(semantic_peaks, len(tokens) - 1):
-            first_char, last_char, segment_text = snap_to_boundary(
-                boundaries, document, token_to_char[offset], token_to_char[peak], overlap
-            )
-            if len(segment_text) < min_chunk_size:
-                continue
-            if segment_text != "":
-                segments.append(RagSegment(
-                    vector=meshed_vectors[offset:peak].mean(dim=0),
-                    text=segment_text,
-                    text_coords=(first_char, last_char)
-                ))
-            offset = peak
-
-        return RagAtiniResponse(
+        request = RagAtiniVectorizeRequest(
             sigma=sigma,
-            prominence=prominence,
-            overlap=overlap,
-
-            boundaries=boundaries,
-            token_to_char=token_to_char,
-            velocity=semantic_velocity,
-            peaks=semantic_peaks,
             document=document,
-
-            segments=segments
+            boundaries=boundaries,
+            velocity=semantic_velocity,
+            token_to_char=token_to_char
         )
+        res = RagAtiniResponse(request=request, prominence=prominence, overlap=overlap, min_chunk_size=min_chunk_size)
+        return res
