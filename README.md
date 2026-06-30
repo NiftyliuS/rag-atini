@@ -1,41 +1,67 @@
 # RagAtini
 
-Semantic-velocity document chunker. RagAtini segments a document by embedding it
-through a transformer, tracking how fast the meaning shifts from token to token
-("semantic velocity"), cutting at the sharp transitions, and snapping each cut to
-a real sentence/paragraph boundary with a neural splitter.
+A document chunker that cuts where the *meaning* changes, not where the
+character count runs out.
 
-The result is a set of coherent, boundary-aligned chunks whose granularity is
-tunable — from a few large sections to many small passages — without re-running
-the expensive embedding pass.
+Most chunkers split on length or punctuation — they have no idea what the text is
+about. RagAtini reads the document through a transformer and watches how the
+meaning drifts from one token to the next. Where the meaning turns a corner, it
+cuts. Then it nudges each cut onto a real sentence or paragraph boundary so nothing
+breaks mid-thought.
 
-## How it works
+The chunks come out coherent, boundary-aligned, and verbatim — each one is an exact
+slice of the source text.
 
-1. **Embed** the document through an embedding model (e.g. `nomic-ai/modernbert-embed-base`),
-   meshing per-token vectors across overlapping windows so even long documents get
-   one continuous vector per token.
-2. **Smooth** the token-vector sequence (Gaussian), then compute **semantic velocity** —
-   the norm of the difference between consecutive smoothed vectors. Velocity spikes
-   where the topic shifts.
-3. **Detect peaks** in the velocity curve (prominence-gated). Each peak is a candidate cut.
-4. **Snap** each cut to the nearest real boundary using the `chonky` neural sentence
-   splitter, so chunks never break mid-sentence or mid-word.
+## The idea
 
-The expensive work (steps 1–2) is prominence-independent. Granularity (step 3) is a
-cheap re-slice — see [`.to()`](#re-slicing-without-re-embedding).
+The method leans on an emergent property of BERT-style encoders that they were
+never explicitly trained for.
 
-## Installation
+When you run a document through a model like `modernbert-embed`, you get one vector
+per token. These models are trained so that text with similar *meaning* lands in
+similar places in vector space. The side effect: as you read along a document, the
+sequence of token vectors traces a *path* through meaning space. While the topic
+holds steady, consecutive vectors sit close together — the path moves slowly. When
+the topic shifts, consecutive vectors jump apart — the path lurches.
+
+Nobody trained the model to mark section boundaries. But because it learned to
+place similar meanings near each other, the *speed* at which its vectors move
+becomes a signal for where the meaning changes. We call that speed **semantic
+velocity**: the distance between each token's vector and the one before it. Topic
+boundaries show up as spikes in velocity, and that emergent signal is what RagAtini
+cuts on.
+
+A practical wrinkle: long documents don't fit in one context window, so the per-token
+vectors are built by running overlapping windows and **meshing** them — averaging
+each token's vector across every window that saw it. That gives one continuous,
+stable vector per token across an arbitrarily long document, so the velocity curve
+is smooth end-to-end rather than resetting at every window edge.
+
+### How it runs
+
+1. **Embed & mesh** — run overlapping windows through the embedding model and mesh
+   the per-token vectors into one continuous sequence.
+2. **Smooth & measure** — Gaussian-smooth the sequence, then compute semantic
+   velocity (the norm of the difference between consecutive vectors). The smoothing
+   width is set by `f_sig`.
+3. **Find the turns** — detect peaks in the velocity curve. A peak is a candidate
+   cut. How sharp a peak must be is set by `prominence`.
+4. **Snap to language** — move each cut onto the nearest real sentence/paragraph
+   boundary using the `chonky` neural splitter, so chunks never break mid-sentence.
+
+Steps 1–2 are the expensive part and they run **once**. Steps 3–4 are cheap, which
+is what makes re-chunking at a different granularity nearly free — see
+[`.to()`](#re-chunking-without-re-embedding).
+
+## Install
 
 ```bash
-pip install torch transformers scipy numpy
-# the chonky boundary splitter is pulled from the Hugging Face hub on first run
+pip install -r requirements.txt
 ```
 
-For the plotting helpers:
-
-```bash
-pip install umap-learn scikit-learn matplotlib
-```
+The `chonky` boundary splitter downloads its model from the Hugging Face hub on
+first use. The plotting extras (`umap-learn`, `scikit-learn`, `matplotlib`) are only
+needed if you use `charts.py`.
 
 ## Quick start
 
@@ -62,108 +88,147 @@ for seg in response.segments:
     print(f"[{start}:{end}] {seg.text[:80]}...")
 ```
 
-Each `segment.text` is exactly `document[start:end]` — chunks are verbatim slices
-of the source, never paraphrased or reconstructed.
+Every `seg.text` is exactly `document[start:end]`. No paraphrasing, no
+reconstruction — you can take the coords straight back to the source.
 
-## API
+## Interface
 
 ### `RagAtini(model, tokenizer, max_chunk_length=None, doc_prefix="search_document: ")`
 
-Wraps an embedding model and tokenizer. `max_chunk_length` defaults to the
-tokenizer's `model_max_length`. `doc_prefix` is prepended to each window before
-embedding (use the prefix your embedding model expects).
+Wraps an embedding model and its tokenizer.
+
+- `max_chunk_length` — window size for embedding. Defaults to the tokenizer's
+  `model_max_length`.
+- `doc_prefix` — prepended to each window before embedding. Use whatever prefix your
+  embedding model expects (nomic uses `"search_document: "`).
 
 ### `vectorize(document, *, f_sig=1.0, prominence=0.5, overlap=False, min_chunk_size=100, ...) -> RagAtiniResponse`
 
-Runs the full pipeline and returns a response containing the cuts.
+Runs the full pipeline and returns a response holding the chunks.
 
-| parameter | default | effect |
+| param | default | what it does |
 |---|---|---|
-| `f_sig` | `1.0` | Smoothing scale. Lower = finer chunks (less smoothing, more peaks survive). `1.0` ≈ large sections, `0.5` ≈ balanced, `0.25` ≈ fine passages. |
-| `prominence` | `0.5` | How sharp a velocity peak must be (relative to the local noise floor) to become a cut. Higher = fewer, stronger cuts. |
-| `overlap` | `False` | If `True`, each chunk extends one boundary past its cut on both sides. Useful only at fine granularity, where it bridges evidence split across small chunks. |
-| `min_chunk_size` | `100` | Minimum chunk length in characters. Slivers merge into the next chunk. |
+| `f_sig` | `1.0` | Smoothing width for the velocity curve. **Lower = finer chunks** (less smoothing, more peaks survive). `1.0` gives large sections, `0.5` is a good balance, `0.25` gives fine passages. |
+| `prominence` | `0.5` | How sharply a velocity peak must rise above its surroundings to count as a cut. **Higher = fewer, coarser cuts.** |
+| `overlap` | `False` | If `True`, each chunk reaches one boundary past its cut on each side. Only worth it at fine granularity, where it bridges evidence split across small chunks. |
+| `min_chunk_size` | `100` | Minimum chunk length in characters. Slivers merge into their neighbour. |
 
 ### `RagAtiniResponse`
 
-| attribute | type | description |
-|---|---|---|
-| `segments` | `list[RagAtiniTextSegment]` | The chunks, in document order. |
-| `peaks` | `np.ndarray` | Token indices of the velocity peaks used as cuts. |
-| `prominence`, `overlap`, `min_chunk_size` | | The settings this response was built with. |
+| attribute | description |
+|---|---|
+| `.segments` | The chunks, in document order. Each is a `RagAtiniTextSegment` with `.text` (the verbatim slice) and `.text_coords` (`(start_char, end_char)`). |
+| `.peaks` | Token indices of the velocity peaks used as cuts. |
+| `.prominence`, `.overlap`, `.min_chunk_size` | The settings this response was built with. |
 
-`RagAtiniTextSegment` has `.text` (the verbatim chunk) and `.text_coords`
-(`(start_char, end_char)` into the original document).
+### Re-chunking without re-embedding
 
-### Re-slicing without re-embedding
-
-The costly pipeline runs once. To get a different granularity from the **same**
-embedding pass, call `.to()` on a response — it re-detects peaks and rebuilds
-segments, but reuses the cached velocity curve and boundary pool:
+The expensive embedding pass happens once, inside `vectorize`. To get a *different*
+granularity from that same pass, call `.to()` on the response. It re-detects peaks
+and rebuilds the chunks, but reuses the cached velocity curve — so it's effectively
+instant:
 
 ```python
-response = ragatini.vectorize(document, f_sig=0.5)
+response = ragatini.vectorize(document, f_sig=0.5)   # embeds once
 
-coarse = response.to(prominence=4.0)   # fewer, larger chunks
-fine   = response.to(prominence=0.1)   # more, smaller chunks
+coarse = response.to(prominence=2.0)   # a handful of large sections
+fine   = response.to(prominence=0.1)   # many small passages
 ```
 
-`.to()` returns a fresh response and does not mutate the original, so you can hold
-several granularities at once (e.g. to build a hierarchy externally). Note that
-`.to()` only varies `prominence`, `overlap`, and `min_chunk_size` — changing the
-smoothing (`f_sig`) requires a new `vectorize` call, because it reshapes the
-velocity curve itself.
+`.to()` returns a **fresh** response and never mutates the original, so you can hold
+several granularities side by side (handy for building a hierarchy):
+
+```python
+levels = [response.to(prominence=p) for p in (0.1, 0.5, 2.0)]
+```
+
+`.to()` adjusts `prominence`, `overlap`, and `min_chunk_size`. It does **not** change
+`f_sig` — the smoothing width reshapes the velocity curve itself, so a different
+`f_sig` needs a new `vectorize` call.
+
+## Picking the knobs
+
+`f_sig` and `prominence` both control granularity but from different directions:
+`f_sig` reshapes the curve (how much detail survives smoothing), `prominence` sets
+the bar for which peaks on that curve become cuts.
+
+A few notes from practice:
+
+- **`prominence` around 0.5** is a sensible default for general chunking.
+- **Push `prominence` up for coarser sections** (2.0 gives clean section-level
+  chunks on a typical paper). Going much higher — say **4.0 — gets very coarse**: on
+  prose-heavy documents the only peaks that survive are the violent ones where tables
+  jar against text, so a long stretch of prose stays as a single large chunk next to
+  finely-cut tables. For *flat* chunking that's usually too aggressive; for a
+  **hierarchy** it's useful — that large prose chunk is a clean *parent* node, and a
+  finer pass (lower `prominence`) subdivides it into children. Because every level
+  draws cuts from the same boundary pool, the fine cuts nest cleanly inside the
+  coarse ones, forming a real containment tree:
+
+  ```python
+  response = ragatini.vectorize(document, f_sig=0.5)
+  parent   = response.to(prominence=4.0)   # coarse parent sections
+  children = response.to(prominence=0.5)   # nest inside the parents
+  ```
+- **Drop `f_sig` for finer chunks** when you want tight, topically-pure passages
+  (e.g. 0.25). Pair it with `overlap=True` if evidence tends to straddle the cuts.
 
 ## Visualizing
 
-The `charts.py` helpers plot the velocity curve and the semantic trajectory.
+`charts.py` plots the velocity curve and the semantic trajectory. It takes plain
+arrays, so it has no dependency on the model:
 
 ```python
 from charts import peak_velocity_chart, umap_chart_2d
 
 velocity = response._request.velocity.cpu().numpy()
-vectors  = response._request.vectors.cpu().numpy()   # meshed token vectors
+vectors  = response._request.vectors.cpu().numpy()   # smoothed token vectors
 peaks    = response.peaks
 
-peak_velocity_chart(velocity, peaks)   # the velocity curve with cuts marked
-umap_chart_2d(vectors, peaks)          # the semantic trajectory, colored by chunk
-umap_chart_2d(vectors)                 # trajectory colored by token index (no cuts)
+peak_velocity_chart(velocity, peaks)   # the velocity curve, cuts circled
+umap_chart_2d(vectors, peaks)          # the meaning-space path, coloured by chunk
+umap_chart_2d(vectors)                 # the path coloured by token index (no cuts)
 ```
 
-### Semantic velocity with cuts
+### The velocity curve
 
-The velocity curve is the heart of the method: peaks (circles) are where meaning
-shifts fastest, and become chunk boundaries. The same document can be cut coarsely
-or finely by changing the prominence threshold.
+This is the signal everything rests on. Peaks (circled) are where the meaning moves
+fastest — the candidate cuts. The same document chunks coarsely or finely just by
+moving the `prominence` bar up or down.
 
-**`prominence=0.5`** — balanced chunking, cuts at every clear transition:
+**`prominence=0.5`** — balanced, cuts at every clear transition:
 
 ![Velocity peaks at prominence 0.5](plots/paper_peaks_0_5.png)
 
-**`prominence=4.0`** — only the strongest transitions survive, yielding a handful
-of large sections:
+**`prominence=2.0`** — coarse, clean section-level cuts:
+
+![Velocity peaks at prominence 2.0](plots/paper_peaks_2_0.png)
+
+**`prominence=4.0`** — very coarse: only the sharpest table-vs-prose spikes survive,
+leaving long prose stretches as single large chunks. Too coarse for flat chunking,
+but these large chunks make clean *parent* nodes for a hierarchy:
 
 ![Velocity peaks at prominence 4.0](plots/paper_peaks_4_0.png)
 
-### Semantic trajectory
+### The semantic trajectory
 
-Projecting the smoothed token vectors to 2D (UMAP) shows the document as a
-continuous path through meaning space. Color runs from the start of the document
-to the end — the trajectory is one long thread, which is why chunking works by
-cutting *along* it at the points of fastest change rather than by clustering.
+Projecting the smoothed token vectors to 2D (UMAP) shows the document as a single
+continuous path through meaning space, coloured from start to end. It's one long
+thread — which is exactly why chunking works by cutting *along* the path at the
+sharp turns, rather than by clustering. There are no separate islands to cluster; a
+single-topic document is a sequence, and the cuts fall where the sequence turns.
 
 ![UMAP semantic trajectory](plots/paper_umap.png)
 
 ## Notes
 
-- Chunks are verbatim character-range slices of the input. `split_text`-style usage
-  returns `document[a:b]` exactly, so downstream evidence-locating (e.g. `.find()`)
-  works on the original text.
-- The boundary splitter (`chonky`) is a prose model. It refines cuts onto real
-  sentence/paragraph boundaries even at fine granularity, so small chunks stay
-  coherent rather than fragmenting mid-structure.
-- For single-topic documents, the semantic trajectory is a 1D sequence with no
-  cross-document clusters — chunking captures the structure by cutting the sequence,
-  not by grouping. Cross-segment *topical* grouping can be derived from the segment
-  vectors; cross-segment *referential* links (e.g. a method and its results) require
-  sparse/lexical signals, not dense vectors.
+- **Verbatim chunks.** Each chunk is `document[a:b]` exactly, so locating evidence in
+  the original text (`.find()`, offsets, highlighting) just works.
+- **Boundary refinement.** The `chonky` splitter is a prose model; it lands cuts on
+  real sentence/paragraph boundaries even at fine granularity, so small chunks stay
+  coherent instead of fragmenting mid-structure.
+- **Dense vectors carry sequence, not cross-references.** The trajectory shows that
+  dense embeddings encode *topical proximity* (where you are in the document), not
+  *referential links* (e.g. a method and the table reporting its results — those
+  share entities, not vocabulary). Topical grouping can be read off the segment
+  vectors; referential links need a sparse/lexical signal instead.
