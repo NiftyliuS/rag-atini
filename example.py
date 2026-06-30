@@ -36,7 +36,7 @@ if __name__ == "__main__":
 
     if context:
         print(f"Context character length: {len(context)}")
-        response_lg = ragAtini.vectorize(context, prominence=4.0, overlap=False)
+        response_lg = ragAtini.vectorize(context, prominence=2.0, overlap=False)
         print_segments(response_lg)
 
         response_sm = response_lg.to(prominence=0.5)
