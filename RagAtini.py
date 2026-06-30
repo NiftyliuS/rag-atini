@@ -78,6 +78,7 @@ class RagAtiniVectorizeRequest:
     document: str
     boundaries: List[int]
     velocity: torch.Tensor
+    vectors: torch.Tensor
     token_to_char: List[int]
 
 
@@ -379,6 +380,7 @@ class RagAtini:
             document=document,
             boundaries=boundaries,
             velocity=semantic_velocity,
+            vectors=smoothed_vectors,
             token_to_char=token_to_char
         )
         res = RagAtiniResponse(request=request, prominence=prominence, overlap=overlap, min_chunk_size=min_chunk_size)

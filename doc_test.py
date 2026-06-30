@@ -4,6 +4,7 @@ from transformers import AutoTokenizer, AutoModel
 import matplotlib.pyplot as plt
 import numpy as np
 from RagAtini import RagAtini
+from charts import peak_velocity_chart, umap_chart
 
 DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
 
@@ -129,6 +130,13 @@ if __name__ == "__main__":
     if context:
         print(f"Context character length: {len(context)}")
         response = ragAtini.vectorize(context, prominence=0.5, overlap=False)
+
+        velocity = response._request.velocity.cpu().numpy()
+        vectors = response._request.vectors.cpu().numpy()
+        peaks = response.peaks
+        peak_velocity_chart(velocity, peaks)
+        umap_chart(vectors)
+        exit(1)
         velocity = response._request.velocity
         tokens_len = len(velocity)
         if tokens_len > 0:
