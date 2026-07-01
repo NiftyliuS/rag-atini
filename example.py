@@ -6,10 +6,11 @@ from debug import evaluate_retrieval
 
 DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
 
-model_name = "nomic-ai/modernbert-embed-base"
-tokenizer = AutoTokenizer.from_pretrained(model_name)
-model = AutoModel.from_pretrained(model_name).to(DEVICE)
-ragAtini = RagAtini(model, tokenizer)
+ragAtini = RagAtini(
+    vectorizer_model="nomic-ai/modernbert-embed-base",
+    boundary_model="mirth/chonky_modernbert_base_1",
+    device=DEVICE
+)
 
 
 def print_segments(response, full: bool = False):

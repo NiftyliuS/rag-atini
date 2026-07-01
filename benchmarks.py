@@ -1,4 +1,4 @@
-OPENAI_API_KEY = ""
+OPENAI_API_KEY = "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"
 
 import torch
 from transformers import AutoTokenizer, AutoModel

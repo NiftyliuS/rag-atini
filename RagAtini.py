@@ -1,24 +1,14 @@
 import bisect
 import torch
 import numpy as np
-import copy
 from dataclasses import dataclass
 from typing import List, Tuple, Optional
 from scipy.ndimage import gaussian_filter1d
 from scipy.signal import find_peaks
-from transformers import AutoTokenizer, AutoModelForTokenClassification, pipeline
-
-chonky_tokenizer = AutoTokenizer.from_pretrained("mirth/chonky_modernbert_base_1", model_max_length=1024)
-chonky_model = AutoModelForTokenClassification.from_pretrained(
-    "mirth/chonky_modernbert_base_1", num_labels=2, id2label={0: "O", 1: "separator"}, label2id={"O": 0, "separator": 1}
-)
-chonky_model.eval()
-chonky = pipeline(
-    "ner", model=chonky_model, tokenizer=chonky_tokenizer, aggregation_strategy="simple", device=-1, batch_size=8
-)
+from transformers import AutoTokenizer, AutoModel, AutoModelForTokenClassification, pipeline
 
 
-def detect_peaks(semantic_velocity, distance: int, prominence: float = 4.0):
+def detect_peaks(semantic_velocity, distance: int, prominence: float = 0.5):
     if isinstance(semantic_velocity, torch.Tensor):
         vel_np = semantic_velocity.float().cpu().numpy()
     else:
@@ -31,15 +21,6 @@ def detect_peaks(semantic_velocity, distance: int, prominence: float = 4.0):
     peaks, _ = find_peaks(vel_np, distance=distance, prominence=min_prominence)
 
     return peaks
-
-
-def find_boundaries(texts, min_score=0.5):
-    if isinstance(texts, str):
-        texts = [texts]
-    results = chonky(texts)  # one batched call; list-per-input
-    if texts and isinstance(results[0], dict):  # single input -> pipeline returns a flat list
-        results = [results]
-    return [[(e["end"], e["score"]) for e in r if e["score"] > min_score] for r in results]
 
 
 def find_nearest_boundary(boundaries, pos):
@@ -148,14 +129,22 @@ class RagAtiniResponse:
 
 
 class RagAtini:
-    def __init__(self, model, tokenizer, max_chunk_length=None, doc_prefix="search_document: "):
-        self.model = model
-        self.device = next(self.model.parameters()).device if hasattr(self.model, "parameters") else "cpu"
+    def __init__(self,
+                 vectorizer_model: str = "nomic-ai/modernbert-embed-base",
+                 boundary_model: str = "mirth/chonky_modernbert_base_1",
+                 doc_prefix="search_document: ",
+                 device: str = 'cuda',
+                 max_chunk_length=None):
+        self.device = device if device.startswith('cuda') and torch.cuda.is_available() else 'cpu'
 
-        self.max_context_window = max_chunk_length if max_chunk_length else getattr(tokenizer, "model_max_length", 8192)
+        self.tokenizer = AutoTokenizer.from_pretrained(vectorizer_model)
+        self.max_context_window = max_chunk_length if max_chunk_length else getattr(self.tokenizer, "model_max_length",
+                                                                                    8192)
         assert self.max_context_window, "Failed to resolve max_context_window"
 
-        self.tokenizer = copy.deepcopy(tokenizer)
+        self.model = AutoModel.from_pretrained(vectorizer_model).to(self.device)
+        self.model.eval()
+
         self.tokenizer.model_max_length = int(1e9)
         self.pad_id = self.tokenizer.pad_token_id if self.tokenizer.pad_token_id is not None else 0
         self.cls_id = self.tokenizer.cls_token_id if self.tokenizer.cls_token_id is not None else self.tokenizer.bos_token_id
@@ -168,9 +157,31 @@ class RagAtini:
         self.default_stride = int(self.max_context_window * 0.25)
         self.sigma = max(10, self.max_context_window // 100)
 
-        self.find_boundaries = find_boundaries
-        if hasattr(self.model, "eval"):
-            self.model.eval()
+        self.chonky = self.init_chonky(boundary_model)
+
+    def init_chonky(self, model_name):
+        chonky_tokenizer = AutoTokenizer.from_pretrained(model_name, model_max_length=1024)
+        chonky_model = AutoModelForTokenClassification.from_pretrained(
+            model_name, num_labels=2, id2label={0: "O", 1: "separator"},
+            label2id={"O": 0, "separator": 1}
+        )
+        chonky_model.eval()
+        return pipeline(
+            task="ner",
+            model=chonky_model,
+            tokenizer=chonky_tokenizer,
+            aggregation_strategy="simple",
+            device=self.device,
+            batch_size=8
+        )
+
+    def find_boundaries(self, texts, min_score=0.5):
+        if isinstance(texts, str):
+            texts = [texts]
+        results = self.chonky(texts)  # one batched call; list-per-input
+        if texts and isinstance(results[0], dict):  # single input -> pipeline returns a flat list
+            results = [results]
+        return [[(e["end"], e["score"]) for e in r if e["score"] > min_score] for r in results]
 
     def tokenize(self, text: str):
         enc = self.tokenizer(text, add_special_tokens=False, return_tensors="pt",
@@ -195,16 +206,15 @@ class RagAtini:
         chunks = []
         for i in range(0, max(1, tokens_len), stride):
             chunk = tokens[i:i + window_size]
-
             chunk_ids = torch.cat([cls_tensor, prefix_tensor, chunk, sep_tensor])
 
             if chunk_ids.size(0) < self.max_context_window:
-                pad_tensor = torch.full((self.max_context_window - chunk_ids.size(0),), self.pad_id,
-                                        dtype=torch.long, device=self.device)
+                pad_tensor = torch.full(
+                    (self.max_context_window - chunk_ids.size(0),), self.pad_id, dtype=torch.long, device=self.device
+                )
                 chunk_ids = torch.cat([chunk_ids, pad_tensor])
 
             chunks.append(chunk_ids)
-
             if i + window_size >= tokens_len:
                 break
 
@@ -259,7 +269,6 @@ class RagAtini:
             chunk_len = end_idx - start_idx
 
             chunk_mask = base_window[:chunk_len].clone()
-
             if chunk_idx == 0:
                 chunk_mask[:chunk_len // 2] = 1.0
             if chunk_idx == num_chunks - 1:
@@ -293,7 +302,6 @@ class RagAtini:
             chunk_len = end_idx - start_idx
 
             mask_expanded = chunk_masks[chunk_idx, :chunk_len].unsqueeze(-1)
-
             valid_vectors = chunk_vectors[chunk_idx, 1 + self.prefix_len:1 + self.prefix_len + chunk_len, :]
 
             sum_vec[start_idx:end_idx] += valid_vectors * mask_expanded
@@ -306,7 +314,6 @@ class RagAtini:
         refined = []
         for seps, base in zip(segments_boundaries, segment_offsets):
             refined.extend((base + char, conf) for char, conf in seps)
-
         refined = sorted(set(refined))
 
         deduped = {}
