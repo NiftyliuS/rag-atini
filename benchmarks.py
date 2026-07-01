@@ -96,22 +96,60 @@ default_ef = embedding_functions.OpenAIEmbeddingFunction(
 )
 
 
+def _metrics(res):
+    # drop the giant per-query corpora_scores; keep scalar summaries as plain floats
+    return {k: float(v) for k, v in res.items() if k != "corpora_scores"}
+
+
+def print_table(rows):
+    cols = ["benchmark", "retrieve", "iou_mean", "iou_std", "recall_mean", "recall_std",
+            "precision_omega_mean", "precision_mean", "chunks_count", "mean_chunk_chars"]
+    head = ["benchmark", "r", "iou", "iou_sd", "recall", "rec_sd", "precW", "prec", "chunks", "chars"]
+
+    def cell(k, v):
+        if k == "chunks_count":
+            return str(int(v))
+        if k == "mean_chunk_chars":
+            return f"{v:.0f}"
+        return f"{v:.4f}" if isinstance(v, float) else str(v)
+
+    table = [head] + [[cell(k, r.get(k)) for k in cols] for r in rows]
+    widths = [max(len(row[i]) for row in table) for i in range(len(head))]
+
+    def line(row):
+        return "| " + " | ".join(v.ljust(w) for v, w in zip(row, widths)) + " |"
+
+    print()
+    print(line(head))
+    print("|" + "|".join("-" * (w + 2) for w in widths) + "|")
+    for row in table[1:]:
+        print(line(row))
+
+
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--benchmarks", default=",".join(BENCHMARKS),
-                   help="comma-separated, e.g. coarse,coarse-overlap")
+                   help="comma-separated or 'all', e.g. coarse,coarse-overlap")
     p.add_argument("--retrieve", type=int, default=5, help="5 = top-5, -1 = Min")
     args = p.parse_args()
 
     names = list(BENCHMARKS) if args.benchmarks == "all" else [n.strip() for n in args.benchmarks.split(",")]
 
     rows = []
-    for name in names:
+    total = len(names)
+    for i, name in enumerate(names, 1):
         bm = BENCHMARKS[name]
+        print(f"[{i}/{total}] running {name} (r={args.retrieve}) ...", flush=True)
         chunker = RagAtiniChunker(bm.prominence, bm.f_sig, bm.overlap, name)
         res = GeneralEvaluation().run(chunker, default_ef, retrieve=args.retrieve)
-        print(name, "retrieve=%d" % args.retrieve, res)
-        rows.append({**chunker.summary(), "retrieve": args.retrieve, **res})
+        row = {"benchmark": name, "retrieve": args.retrieve, **chunker.summary(), **_metrics(res)}
+        rows.append(row)
+        print(f"[{i}/{total}] done    {name:<16} "
+              f"IoU {row['iou_mean']:.4f}+-{row['iou_std']:.4f}  "
+              f"Recall {row['recall_mean']:.3f}  PrecW {row['precision_omega_mean']:.3f}  "
+              f"{int(row['chunks_count'])} chunks / {row['mean_chunk_chars']:.0f} chars", flush=True)
+
+    print_table(rows)
     return rows
 
 
