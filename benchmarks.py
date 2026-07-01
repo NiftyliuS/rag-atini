@@ -44,10 +44,10 @@ class Benchmark:
 BENCHMARKS = {
     "coarse": Benchmark("coarse", prominence=0.5, f_sig=1.0, overlap=False),
     "coarse-overlap": Benchmark("coarse-overlap", prominence=0.5, f_sig=1.0, overlap=True),
-    "medium": Benchmark("b", prominence=0.5, f_sig=0.5, overlap=False),
-    "medium-overlap": Benchmark("b", prominence=0.5, f_sig=0.5, overlap=True),
-    "short": Benchmark("c", prominence=0.1, f_sig=0.25, overlap=False),
-    "short-overlap": Benchmark("d", prominence=0.1, f_sig=0.25, overlap=True),
+    "medium": Benchmark("medium", prominence=0.5, f_sig=0.5, overlap=False),
+    "medium-overlap": Benchmark("medium-overlap", prominence=0.5, f_sig=0.5, overlap=True),
+    "short": Benchmark("short", prominence=0.1, f_sig=0.25, overlap=False),
+    "short-overlap": Benchmark("short-overlap", prominence=0.1, f_sig=0.25, overlap=True),
 }
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
@@ -82,7 +82,6 @@ class RagAtiniChunker(BaseChunker):
     def summary(self):
         chunks = self.chunks
         sizes = [len(c) for c in chunks]
-        print(f"{self.benchmark_name}: chunks={len(chunks)} mean_chars={sum(sizes) / len(sizes):.0f}")
         return {
             "benchmark_name": self.benchmark_name,
             "chunks_count": len(chunks),
@@ -90,10 +89,17 @@ class RagAtiniChunker(BaseChunker):
         }
 
 
+EMBED_MODEL = "text-embedding-3-large"
 default_ef = embedding_functions.OpenAIEmbeddingFunction(
     api_key=OPENAI_API_KEY,
-    model_name="text-embedding-3-large"
+    model_name=EMBED_MODEL
 )
+
+# chunking_evaluation locates the paper's frozen embeddings via ef._model_name,
+# a private attr newer chromadb dropped. Re-attach it so the frozen (reproducible,
+# paper-matching) path is used instead of silently re-embedding every run.
+if not hasattr(default_ef, "_model_name"):
+    default_ef._model_name = EMBED_MODEL
 
 
 def _metrics(res):
