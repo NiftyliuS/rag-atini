@@ -187,29 +187,29 @@ embedded with OpenAI `text-embedding-3-large`. Each named config is a
 Values are fractions (the Chroma paper reports the same numbers ×100). IoU rewards
 tight, boundary-aligned chunks; Precision_Ω is precision at perfect recall and so
 does not depend on the retrieval budget. `chars` is mean chunk length in characters
-(÷~4 for cl100k tokens). Recall is a **bare mean**: per query it's all-or-nothing (the excerpt's chunk is retrieved or it isn't), so its standard deviation just tracks √(p(1−p)) and says nothing extra — the mean is the number. IoU is continuous, so its ± std is meaningful.
+(÷~4 for cl100k tokens). Recall and IoU are reported as **bare means**. Per query, recall is all-or-nothing and IoU collapses to 0 whenever the excerpt's chunk isn't retrieved, so both pile mass at the extremes — a ± would imply a symmetric spread that isn't there. The per-query arrays are in the CSV if you want the real distribution.
 
 ### Retrieve = 5 (top-5)
 
-| config         | chars | chunks | Recall | IoU           | Precision_Ω |
-|----------------|-------|--------|--------|---------------|-------------|
-| coarse         | 1365  | 1058   | 0.914  | 0.035 ± 0.026 | 0.165       |
-| coarse-overlap | 1654  | 1058   | 0.884  | 0.030 ± 0.024 | 0.122       |
-| medium         | 693   | 2085   | 0.889  | 0.065 ± 0.050 | 0.290       |
-| medium-overlap | 947   | 2086   | 0.855  | 0.048 ± 0.040 | 0.180       |
-| short          | 295   | 4895   | 0.827  | 0.134 ± 0.095 | 0.561       |
-| short-overlap  | 492   | 5442   | 0.870  | 0.088 ± 0.062 | 0.258       |
+| config         | chars | chunks | Recall | IoU   | Precision_Ω |
+|----------------|-------|--------|--------|-------|-------------|
+| coarse         | 1365  | 1058   | 0.914  | 0.035 | 0.165       |
+| coarse-overlap | 1654  | 1058   | 0.884  | 0.030 | 0.122       |
+| medium         | 693   | 2085   | 0.889  | 0.065 | 0.290       |
+| medium-overlap | 947   | 2086   | 0.855  | 0.048 | 0.180       |
+| short          | 295   | 4895   | 0.827  | 0.134 | 0.561       |
+| short-overlap  | 492   | 5442   | 0.870  | 0.088 | 0.258       |
 
 ### Retrieve = Min
 
-| config         | chars | chunks | Recall | IoU           | Precision_Ω |
-|----------------|-------|--------|--------|---------------|-------------|
-| coarse         | 1365  | 1058   | 0.666  | 0.111 ± 0.131 | 0.165       |
-| coarse-overlap | 1654  | 1058   | 0.652  | 0.077 ± 0.087 | 0.122       |
-| medium         | 693   | 2085   | 0.669  | 0.188 ± 0.202 | 0.290       |
-| medium-overlap | 947   | 2086   | 0.689  | 0.108 ± 0.108 | 0.180       |
-| short          | 295   | 4895   | 0.678  | 0.343 ± 0.307 | 0.561       |
-| short-overlap  | 492   | 5442   | 0.791  | 0.136 ± 0.100 | 0.258       |
+| config         | chars | chunks | Recall | IoU   | Precision_Ω |
+|----------------|-------|--------|--------|-------|-------------|
+| coarse         | 1365  | 1058   | 0.666  | 0.111 | 0.165       |
+| coarse-overlap | 1654  | 1058   | 0.652  | 0.077 | 0.122       |
+| medium         | 693   | 2085   | 0.669  | 0.188 | 0.290       |
+| medium-overlap | 947   | 2086   | 0.689  | 0.108 | 0.180       |
+| short          | 295   | 4895   | 0.678  | 0.343 | 0.561       |
+| short-overlap  | 492   | 5442   | 0.791  | 0.136 | 0.258       |
 
 **Reading the results.**
 
