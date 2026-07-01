@@ -12,6 +12,12 @@ ragAtini = RagAtini(
     device=DEVICE
 )
 
+# multilanguage setup
+# ragAtini = RagAtini(
+#     vectorizer_model="nomic-ai/nomic-embed-text-v2-moe",
+#     boundary_model="mirth/chonky_mmbert_small_multilingual_1",
+#     device=DEVICE
+# )
 
 def print_segments(response, full: bool = False):
     print(f"\n{'=' * 80}\nEXTRACTED SEGMENTS (prominence={response.prominence})\n{'=' * 80}")
