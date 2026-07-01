@@ -1,8 +1,6 @@
-OPENAI_API_KEY = "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"
-
+from dataclasses import dataclass
 import torch
-from transformers import AutoTokenizer, AutoModel
-from chromadb import Documents, EmbeddingFunction, Embeddings
+import argparse
 import chromadb.api.client
 from chromadb.utils import embedding_functions
 from chunking_evaluation import BaseChunker, GeneralEvaluation
@@ -23,25 +21,53 @@ def _safe_delete(self, name, *a, **k):
 
 chromadb.api.client.Client.delete_collection = _safe_delete
 
+# ========================================================== #
+
+OPENAI_API_KEY = ""
+
+if not OPENAI_API_KEY:
+    print("Please fill in OPENAI_API_KEY for the benchmarks to run or use built in embedding model")
+
+
+# ========================================================== #
+
+@dataclass
+class Benchmark:
+    name: str
+    prominence: float
+    f_sig: float
+    overlap: bool
+    embedder: str = "openai"  # "openai" or "modernbert"
+    retrieve: int = -1  # passed to GeneralEvaluation.run(retrieve=...)
+
+
+BENCHMARKS = {
+    "coarse": Benchmark("coarse", prominence=0.5, f_sig=1.0, overlap=False),
+    "coarse-overlap": Benchmark("coarse-overlap", prominence=0.5, f_sig=1.0, overlap=True),
+    "medium": Benchmark("b", prominence=0.5, f_sig=0.5, overlap=False),
+    "medium-overlap": Benchmark("b", prominence=0.5, f_sig=0.5, overlap=True),
+    "short": Benchmark("c", prominence=0.1, f_sig=0.25, overlap=False),
+    "short-overlap": Benchmark("d", prominence=0.1, f_sig=0.25, overlap=True),
+}
+
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
-model_name = "nomic-ai/modernbert-embed-base"
-tokenizer = AutoTokenizer.from_pretrained(model_name)
-model = AutoModel.from_pretrained(model_name).to(DEVICE)
-ragAtini = RagAtini(model, tokenizer)
-
-call_count = 0
+ragAtini = RagAtini(
+    vectorizer_model="nomic-ai/modernbert-embed-base",
+    boundary_model="mirth/chonky_modernbert_base_1",
+    device=DEVICE
+)
 
 
 class RagAtiniChunker(BaseChunker):
-    def __init__(self, prominence: float, f_sig: float, overlap: bool):
+    def __init__(self, prominence: float, f_sig: float, overlap: bool, benchmark_name: str):
         self.prominence = prominence
         self.f_sig = f_sig
         self.overlap = overlap
+        self.chunks = []
+        self.benchmark_name = benchmark_name
 
     def split_text(self, text):
-        global call_count
-        call_count += 1
         resp = ragAtini.vectorize(
             text,
             prominence=self.prominence,
@@ -49,39 +75,45 @@ class RagAtiniChunker(BaseChunker):
             overlap=self.overlap
         )
         chunks = [s.text for s in resp.segments]
-        sizes = [len(c) for c in chunks]
-        print(f"{call_count} | chunks={len(chunks)} mean_chars={sum(sizes) / len(sizes):.0f}")
+
+        self.chunks += chunks
         return chunks
 
-
-class ModernBertEF(EmbeddingFunction):
-    def __init__(self, model, tokenizer, device, prefix="search_document: "):
-        self.model = model
-        self.tokenizer = tokenizer
-        self.device = device
-        self.prefix = prefix
-
-    def __call__(self, input: Documents) -> Embeddings:
-        out = []
-        with torch.no_grad():
-            for doc in input:
-                enc = self.tokenizer(self.prefix + doc, return_tensors="pt",
-                                     truncation=True, max_length=8192).to(self.device)
-                hidden = self.model(**enc).last_hidden_state
-                mask = enc["attention_mask"].unsqueeze(-1).float()
-                emb = (hidden * mask).sum(1) / mask.sum(1)  # masked mean pool
-                out.append(emb[0].cpu().tolist())
-        return out
+    def summary(self):
+        chunks = self.chunks
+        sizes = [len(c) for c in chunks]
+        print(f"{self.benchmark_name}: chunks={len(chunks)} mean_chars={sum(sizes) / len(sizes):.0f}")
+        return {
+            "benchmark_name": self.benchmark_name,
+            "chunks_count": len(chunks),
+            "mean_chunk_chars": sum(sizes) / len(sizes)
+        }
 
 
-ef = ModernBertEF(model, tokenizer, DEVICE)
-
-# Choose embedding function
 default_ef = embedding_functions.OpenAIEmbeddingFunction(
     api_key=OPENAI_API_KEY,
     model_name="text-embedding-3-large"
 )
 
-# results = GeneralEvaluation().run(RagAtiniChunker(), default_ef, retrieve=-1)
-results = GeneralEvaluation().run(RagAtiniChunker(prominence=0.1, f_sig=0.25, overlap=False), default_ef)
-print(results)
+
+def main():
+    p = argparse.ArgumentParser()
+    p.add_argument("--benchmarks", default=",".join(BENCHMARKS),
+                   help="comma-separated, e.g. coarse,coarse-overlap")
+    p.add_argument("--retrieve", type=int, default=5, help="5 = top-5, -1 = Min")
+    args = p.parse_args()
+
+    names = list(BENCHMARKS) if args.benchmarks == "all" else [n.strip() for n in args.benchmarks.split(",")]
+
+    rows = []
+    for name in names:
+        bm = BENCHMARKS[name]
+        chunker = RagAtiniChunker(bm.prominence, bm.f_sig, bm.overlap, name)
+        res = GeneralEvaluation().run(chunker, default_ef, retrieve=args.retrieve)
+        print(name, "retrieve=%d" % args.retrieve, res)
+        rows.append({**chunker.summary(), "retrieve": args.retrieve, **res})
+    return rows
+
+
+if __name__ == "__main__":
+    main()
