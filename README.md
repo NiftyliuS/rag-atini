@@ -225,8 +225,7 @@ does not depend on the retrieval budget. `chars` is mean chunk length in charact
   recall over `short` (0.827 → 0.870 at top-5, 0.678 → 0.791 at Min) by bridging
   evidence split across small chunks, at some IoU cost.
 
-Numbers use the framework's frozen `text-embedding-3-large` embeddings; without them,
-OpenAI's embedding noise adds roughly ±0.005 run-to-run.
+These numbers are specific to the retrieval **embedding model** (`text-embedding-3-large` here). Absolute Recall / IoU / Precision_Ω values depend on the vectorizer, so rows are only comparable when they share one. With a single vectorizer the run is deterministic once the framework's frozen embeddings load; without them, OpenAI's embedding nondeterminism makes results vary slightly run-to-run.
 
 ## Visualizing
 
