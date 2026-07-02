@@ -1,0 +1,20 @@
+name: publish
+
+on:
+  push:
+    tags: ["v*"]
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    environment: pypi          # optional; only if you set an Environment on the PyPI publisher
+    permissions:
+      id-token: write          # REQUIRED — this is what lets OIDC/trusted publishing work
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install --upgrade build
+      - run: python -m build
+      - uses: pypa/gh-action-pypi-publish@release/v1
