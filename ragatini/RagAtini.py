@@ -133,6 +133,7 @@ class RagAtini:
                  vectorizer_model: str = "nomic-ai/modernbert-embed-base",
                  boundary_model: str = "mirth/chonky_modernbert_base_1",
                  doc_prefix="search_document: ",
+                 boundary_radius=512,
                  device: str = 'cuda',
                  max_chunk_length=None,
                  trust_remote_code: bool = False):
@@ -159,6 +160,7 @@ class RagAtini:
         self.sigma = max(10, self.max_context_window // 100)
 
         self.chonky = self.init_chonky(boundary_model)
+        self.boundary_radius = boundary_radius
 
     def init_chonky(self, model_name):
         chonky_tokenizer = AutoTokenizer.from_pretrained(model_name, model_max_length=1024)
@@ -355,8 +357,9 @@ class RagAtini:
                   overlap: bool = False,
                   min_chunk_size: int = 100,
                   min_boundary_distance: int = 16,
-                  boundary_radius: int = 512
+                  boundary_radius: int = None
                   ):
+        boundary_radius = boundary_radius if boundary_radius else self.boundary_radius
         stride = stride if stride else self.default_stride
         sigma = int(self.sigma * f_sig)
 
