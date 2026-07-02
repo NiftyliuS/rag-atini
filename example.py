@@ -1,8 +1,6 @@
 import torch
-from transformers import AutoTokenizer, AutoModel
 from RagAtini import RagAtini
-from charts import peak_velocity_chart, umap_chart_2d
-from debug import evaluate_retrieval
+from charts import peak_velocity_chart
 
 DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
 
