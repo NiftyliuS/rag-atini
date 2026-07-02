@@ -4,7 +4,7 @@ import argparse
 import chromadb.api.client
 from chromadb.utils import embedding_functions
 from chunking_evaluation import BaseChunker, GeneralEvaluation
-from RagAtini import RagAtini
+from ragatini.RagAtini import RagAtini
 
 # --- chromadb>=1.5 raises NotFoundError when delete_collection hits a -------
 # collection that doesn't exist yet; chunking_evaluation assumes the old

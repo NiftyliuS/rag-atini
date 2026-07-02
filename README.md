@@ -67,7 +67,7 @@ needed if you use `charts.py`.
 
 ```python
 import torch
-from RagAtini import RagAtini
+from ragatini.RagAtini import RagAtini
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 

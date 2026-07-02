@@ -1,0 +1,43 @@
+[build-system]
+requires = ["setuptools>=64", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ragatini"
+version = "0.1.0"
+description = "Semantic-velocity document chunker — cuts where meaning changes, then snaps to real sentence/paragraph boundaries."
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }                       # <-- pick a license; add a matching LICENSE file
+authors = [{ name = "YOUR NAME", email = "you@example.com" }]   # <-- fill in
+keywords = ["chunking", "rag", "retrieval", "embeddings", "nlp", "semantic-chunking"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",     # <-- keep in sync with `license` above
+    "Operating System :: OS Independent",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+
+# Only what ragatini.py actually imports at runtime.
+dependencies = [
+    "torch>=2.1",
+    "transformers>=4.48",   # ModernBERT support landed in transformers 4.48
+    "scipy>=1.10",
+    "numpy>=1.24",
+]
+
+[project.optional-dependencies]
+# Plotting helpers used only by charts.py (not shipped, but handy for dev): pip install "ragatini[plots]"
+plots = ["umap-learn", "scikit-learn", "matplotlib"]
+# Everything the benchmark harness needs: pip install "ragatini[bench]"
+bench = ["chromadb", "chunking_evaluation", "openai"]
+# Tokenizer/backends some multilingual vectorizers need (e.g. bge-m3, e5): pip install "ragatini[multilingual]"
+multilingual = ["sentencepiece"]
+
+[project.urls]
+Homepage = "https://github.com/YOUR_USERNAME/rag-atini"      # <-- fill in
+Repository = "https://github.com/YOUR_USERNAME/rag-atini"    # <-- fill in
+
+# Single-module distribution: ships just ragatini.py, nothing else.
+[tool.setuptools]
+py-modules = ["ragatini"]

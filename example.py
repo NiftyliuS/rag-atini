@@ -1,5 +1,5 @@
 import torch
-from RagAtini import RagAtini
+from ragatini.RagAtini import RagAtini
 from charts import peak_velocity_chart
 
 DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
