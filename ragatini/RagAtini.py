@@ -276,13 +276,6 @@ class RagAtini:
                 chunk_mask[:chunk_len // 2] = 1.0
             if chunk_idx == num_chunks - 1:
                 chunk_mask[chunk_len // 2:] = 1.0
-                taper_len = min(256, chunk_len)
-                if taper_len > 1:
-                    taper = 0.5 * (1.0 + torch.cos(
-                        torch.pi * torch.arange(taper_len, device=self.device) / (taper_len - 1)))
-                    chunk_mask[-taper_len:] = taper
-                elif taper_len == 1:
-                    chunk_mask[-1] = 0.0
 
             chunk_masks[chunk_idx, :chunk_len] = chunk_mask
 
