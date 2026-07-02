@@ -8,7 +8,7 @@ ragAtini = RagAtini(
     vectorizer_model="nomic-ai/modernbert-embed-base",
     boundary_model="mirth/chonky_modernbert_base_1",
     doc_prefix="search_document: ",  # prefix classification required by nomic-ai modernbert
-    device='cuda'  # will default to cpu if not supported by pytorch version
+    device='cuda'
 )
 
 
@@ -17,7 +17,8 @@ ragAtini = RagAtini(
 #     vectorizer_model="nomic-ai/nomic-embed-text-v2-moe",
 #     boundary_model="mirth/chonky_mmbert_small_multilingual_1",
 #     doc_prefix="search_document: ",
-#     device=DEVICE
+#     device='cuda',
+#     trust_remote_code=True,
 # )
 
 def print_segments(response, full: bool = False):

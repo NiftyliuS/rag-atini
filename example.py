@@ -2,13 +2,11 @@ import torch
 from ragatini.RagAtini import RagAtini
 from charts import peak_velocity_chart
 
-DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
-
 ragAtini = RagAtini(
     vectorizer_model="nomic-ai/modernbert-embed-base",
     boundary_model="mirth/chonky_modernbert_base_1",
     doc_prefix="search_document: ",  # prefix classification required by nomic-ai modernbert
-    device=DEVICE
+    device='cuda'
 )
 
 
@@ -17,7 +15,8 @@ ragAtini = RagAtini(
 #     vectorizer_model="nomic-ai/nomic-embed-text-v2-moe",
 #     boundary_model="mirth/chonky_mmbert_small_multilingual_1",
 #     doc_prefix="search_document: ",
-#     device=DEVICE
+#     device='cuda',
+#     trust_remote_code=True,
 # )
 
 def print_segments(response, full: bool = False):
