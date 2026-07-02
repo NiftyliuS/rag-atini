@@ -134,15 +134,16 @@ class RagAtini:
                  boundary_model: str = "mirth/chonky_modernbert_base_1",
                  doc_prefix="search_document: ",
                  device: str = 'cuda',
-                 max_chunk_length=None):
+                 max_chunk_length=None,
+                 trust_remote_code: bool = False):
         self.device = device if device.startswith('cuda') and torch.cuda.is_available() else 'cpu'
 
-        self.tokenizer = AutoTokenizer.from_pretrained(vectorizer_model)
+        self.tokenizer = AutoTokenizer.from_pretrained(vectorizer_model, trust_remote_code=trust_remote_code)
         self.max_context_window = max_chunk_length if max_chunk_length else getattr(self.tokenizer, "model_max_length",
                                                                                     8192)
         assert self.max_context_window, "Failed to resolve max_context_window"
 
-        self.model = AutoModel.from_pretrained(vectorizer_model).to(self.device)
+        self.model = AutoModel.from_pretrained(vectorizer_model, trust_remote_code=trust_remote_code).to(self.device)
         self.model.eval()
 
         self.tokenizer.model_max_length = int(1e9)
