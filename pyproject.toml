@@ -39,5 +39,5 @@ Homepage = "https://github.com/YOUR_USERNAME/rag-atini"      # <-- fill in
 Repository = "https://github.com/YOUR_USERNAME/rag-atini"    # <-- fill in
 
 # Single-module distribution: ships just ragatini.py, nothing else.
-[tool.setuptools]
-py-modules = ["ragatini"]
+[tool.setuptools.packages.find]
+include = ["ragatini*"]
